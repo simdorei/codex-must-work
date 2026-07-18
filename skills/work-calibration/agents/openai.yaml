@@ -1,0 +1,6 @@
+interface:
+  display_name: "Heartbeat recommendation"
+  short_description: "Apply or reject one versioned local-history recommendation"
+  default_prompt: "Handle the Codex Must Work calibration context before continuing."
+policy:
+  allow_implicit_invocation: true

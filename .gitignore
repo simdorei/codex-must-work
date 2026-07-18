@@ -1,0 +1,10 @@
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.tooling/
+.venv/
+*.py[cod]
+build/
+dist/
+.blocker-events-pending.jsonl
+.protocol-schema/

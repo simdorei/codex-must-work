@@ -1,0 +1,29 @@
+{
+  "name": "codex-must-work",
+  "version": "0.1.0+codex.20260718211359",
+  "description": "Opt-in progress heartbeats, adaptive thresholds, and exact-turn managed restart for one Codex thread.",
+  "author": {
+    "name": "banpo"
+  },
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "heartbeat",
+    "monitoring",
+    "task"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Codex Must Work",
+    "shortDescription": "Keep one opted-in Codex task moving to completion.",
+    "longDescription": "Monitors privacy-safe rollout progress, recommends local-history thresholds with explicit consent, and can pause or resume an existing Goal while interrupting only exact turns owned by its same-thread resident manager.",
+    "developerName": "banpo",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Hooks"
+    ],
+    "defaultPrompt": [
+      "$work-on"
+    ]
+  }
+}

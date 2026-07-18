@@ -1,0 +1,25 @@
+{
+  "provider": "astral-sh/python-build-standalone",
+  "release": "20260510",
+  "python": "3.12.13",
+  "distribution": "install_only_stripped",
+  "targets": {
+    "windows-x64": {
+      "archive": "cpython-3.12.13+20260510-windows-x64.tar.gz",
+      "sha256": "24168aff2e7d93784c6a436124c4ebb79b076a4e289bde4902c08333507b71d0",
+      "upstream_asset": "cpython-3.12.13+20260510-x86_64-pc-windows-msvc-install_only_stripped.tar.gz"
+    },
+    "linux-x64": {
+      "archive": "cpython-3.12.13+20260510-linux-x64.tar.gz",
+      "sha256": "d480f5d5878910ecbae212bf23bd7c25d7b209eb8cf5e98823c977384d272e88",
+      "upstream_asset": "cpython-3.12.13+20260510-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+    },
+    "macos-arm64": {
+      "archive": "cpython-3.12.13+20260510-macos-arm64.tar.gz",
+      "sha256": "55bc1a5edbc8ac4da0081f4f5731ed2d1ed10c57cb37a820b2a0dbc7cad742e9",
+      "upstream_asset": "cpython-3.12.13+20260510-aarch64-apple-darwin-install_only_stripped.tar.gz"
+    }
+  },
+  "source": "https://github.com/astral-sh/python-build-standalone/releases/tag/20260510",
+  "license_notice": "Each archive retains CPython LICENSE.txt and bundled component license files; see THIRD_PARTY_NOTICES.md."
+}

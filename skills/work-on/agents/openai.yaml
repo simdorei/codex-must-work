@@ -1,0 +1,6 @@
+interface:
+  display_name: "Work On"
+  short_description: "Monitor and safely restart one Codex task"
+  default_prompt: "Use $work-on to monitor this task and safely recover a stalled turn."
+policy:
+  allow_implicit_invocation: true
