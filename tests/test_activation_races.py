@@ -34,7 +34,7 @@ def test_reuse_rechecks_lifecycle_from_locked_snapshot(
 ) -> None:
     # Given: a previously healthy manager begins shutdown after the initial probe.
     root = tmp_path / "codex-home" / "codex-must-work"
-    activation = request(root, observe_only=False)
+    activation = request(root, observe_only=False, goal_companion=True)
     _ = enable_session(root, activation, managed_report())
     path = runtime_path(root, SESSION_ID)
     values = dict(load_state(root, path).values)
@@ -64,7 +64,7 @@ def test_enable_refuses_runtime_creation_while_old_manager_lease_is_held(
 ) -> None:
     # Given: shutdown removed the runtime before the old resident manager released its lease.
     root = tmp_path / "codex-home" / "codex-must-work"
-    activation = request(root, observe_only=False)
+    activation = request(root, observe_only=False, goal_companion=True)
     _ = enable_session(root, activation, managed_report())
     path = runtime_path(root, SESSION_ID)
     lease = acquire_manager_lease(root, path.name)
@@ -114,6 +114,7 @@ def test_cli_rolls_back_runtime_when_launch_raises_state_error(
         "--message-preset",
         "cleanup",
         "--auto-restart",
+        "--goal-companion",
         "--permission-mode",
         "bypassPermissions",
     ]
@@ -133,7 +134,7 @@ def test_reuse_rejects_state_root_without_private_marker(
 ) -> None:
     # Given: plausible runtime and lease files remain under an untrusted state root.
     root = tmp_path / "codex-home" / "codex-must-work"
-    activation = request(root, observe_only=False)
+    activation = request(root, observe_only=False, goal_companion=True)
     _ = enable_session(root, activation, managed_report())
     path = runtime_path(root, SESSION_ID)
     values = dict(load_state(root, path).values)
@@ -163,7 +164,7 @@ def test_reuse_rejects_state_root_without_private_marker(
 def test_enable_rejects_dangling_runtime_link_before_config_write(tmp_path: Path) -> None:
     # Given: the runtime path is a dangling redirect and configuration already exists.
     root = tmp_path / "codex-home" / "codex-must-work"
-    activation = request(root, observe_only=False)
+    activation = request(root, observe_only=False, goal_companion=True)
     _ = enable_session(root, activation, managed_report())
     path = runtime_path(root, SESSION_ID)
     path.unlink()
@@ -186,7 +187,7 @@ def test_runtime_write_failure_does_not_change_configuration(
 ) -> None:
     # Given: an existing configuration and no active runtime are ready for activation.
     root = tmp_path / "codex-home" / "codex-must-work"
-    activation = request(root, observe_only=False)
+    activation = request(root, observe_only=False, goal_companion=True)
     _ = enable_session(root, activation, managed_report())
     path = runtime_path(root, SESSION_ID)
     path.unlink()
@@ -217,7 +218,7 @@ def test_config_write_failure_removes_new_runtime(
 ) -> None:
     # Given: configuration persistence will fail after activation state is prepared.
     root = tmp_path / "codex-home" / "codex-must-work"
-    activation = request(root, observe_only=False)
+    activation = request(root, observe_only=False, goal_companion=True)
     path = runtime_path(root, SESSION_ID)
     configuration = config_path(root)
 
@@ -242,7 +243,7 @@ def test_config_write_failure_removes_new_runtime(
 def test_enable_during_lease_initialization_fails_without_state_write(tmp_path: Path) -> None:
     # Given: a manager owns its lock but has not yet published the PID marker.
     root = tmp_path / "codex-home" / "codex-must-work"
-    activation = request(root, observe_only=False)
+    activation = request(root, observe_only=False, goal_companion=True)
     _ = enable_session(root, activation, managed_report())
     path = runtime_path(root, SESSION_ID)
     path.unlink()

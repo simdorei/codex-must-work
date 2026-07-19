@@ -137,9 +137,9 @@ def _tool_result(
 
 
 def parent_completed(target: RuntimeTarget, events: tuple[ObservedEvent, ...]) -> bool:
-    """Recognize a terminal event only for the locked parent turn."""
+    """Recognize successful completion only for the locked parent turn."""
     return any(
-        event.terminal
+        event.kind is EventKind.TURN_COMPLETED
         and event.child_id is None
         and target.parent_turn_id is not None
         and event.turn_id == target.parent_turn_id

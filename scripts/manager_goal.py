@@ -130,6 +130,10 @@ class GoalGuard:
         """Prevent fatal cleanup from opening an unowned continuation window."""
         self.restore_active = False
 
+    def status_after_turn(self) -> GoalStatus:
+        """Classify the exact bound Goal without mutating its status."""
+        return self._read_bound().status
+
     def _read_bound(self) -> GoalSnapshot:
         goal = read_goal(self.client, self.thread_id)
         if self.identity is None or goal.identity != self.identity:

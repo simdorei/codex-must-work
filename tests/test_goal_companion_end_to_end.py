@@ -241,10 +241,15 @@ def test_goal_is_fenced_before_watcher_launch_can_finish_turn(tmp_path: Path) ->
 
     assert engine.tick() is True
     between = load_state(root, path).values
-    assert between["managed_turn_id"] is None
-    assert between["handoff_requested"] is True
+    assert between["managed_turn_id"] == "turn-goal-1"
+    assert between["handoff_requested"] is False
     assert client.active is None
     assert client.goal_status == "paused"
+
+    assert engine.tick() is True
+    settled = load_state(root, path).values
+    assert settled["managed_turn_id"] is None
+    assert settled["handoff_requested"] is True
 
     assert engine.tick() is True
     resumed = load_state(root, path).values

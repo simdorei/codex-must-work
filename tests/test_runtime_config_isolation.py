@@ -33,6 +33,7 @@ def _request(
         observe_only=False,
         permission_mode="bypassPermissions",
         now=datetime(2026, 7, 18, tzinfo=UTC),
+        goal_companion=True,
     )
 
 

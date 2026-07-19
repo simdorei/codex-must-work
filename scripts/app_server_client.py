@@ -14,6 +14,7 @@ from scripts.app_server_protocol import (
     AppServerEventState,
     AppServerProtocolError,
     JsonObject,
+    TurnOutcome,
     decode_object,
     response_result,
 )
@@ -140,6 +141,11 @@ class ResidentAppServer:
         """Return whether this connection observed exact turn completion."""
         with self._condition:
             return self._events.was_completed(turn_id)
+
+    def turn_outcome(self, turn_id: str) -> TurnOutcome | None:
+        """Return the exact status classification observed on this connection."""
+        with self._condition:
+            return self._events.turn_outcome(turn_id)
 
     def latest_started_turn(self, thread_id: str) -> str | None:
         """Return the latest start seen for a thread on this connection."""

@@ -83,9 +83,14 @@ def _state(
     return root, rollout, runtime
 
 
-def _append_terminal(rollout: Path, child_id: str | None) -> None:
+def _append_terminal(
+    rollout: Path,
+    child_id: str | None,
+    *,
+    event_type: str = "task_complete",
+) -> None:
     payload: dict[str, JsonValue] = {
-        "type": "task_complete",
+        "type": event_type,
         "turn_id": "turn-parent",
     }
     if child_id is not None:
@@ -101,6 +106,21 @@ def _append_terminal(rollout: Path, child_id: str | None) -> None:
             )
             + "\n"
         )
+
+
+def _append_final_answer(rollout: Path) -> None:
+    record = {
+        "timestamp": "2026-07-17T00:00:00.500Z",
+        "type": "response_item",
+        "payload": {
+            "type": "message",
+            "role": "assistant",
+            "phase": "final_answer",
+            "turn_id": "turn-parent",
+        },
+    }
+    with rollout.open("a", encoding="utf-8", newline="\n") as handle:
+        _ = handle.write(json.dumps(record) + "\n")
 
 
 def _diagnostics(root: Path) -> list[dict[str, JsonValue]]:
@@ -162,6 +182,18 @@ def test_two_children_complete_only_after_parent_terminal(tmp_path: Path) -> Non
     assert rows[0]["child_hash"] is None
     assert rows[0]["state"] == MonitorState.COMPLETED.value
     assert isinstance(rows[0].get("event_id"), str)
+
+
+def test_final_answer_followed_by_parent_abort_never_records_completion(tmp_path: Path) -> None:
+    root, rollout, runtime = _state(tmp_path)
+    engine = WatcherEngine(root)
+    assert engine.tick(0.0, _WALL_TIME) is True
+    _append_final_answer(rollout)
+    _append_terminal(rollout, None, event_type="turn_aborted")
+
+    assert engine.tick(1.0, _WALL_TIME) is True
+    assert load_state(root, runtime).values["parent_complete"] is False
+    assert _completion_rows(root) == []
 
 
 def test_completion_commit_failure_retries_without_duplicate_event(

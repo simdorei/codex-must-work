@@ -75,7 +75,7 @@ def append_progress(rollout: Path, child_id: str | None, secret: str = "") -> No
     if child_id is not None:
         payload["agent_id"] = child_id
     record = {
-        "timestamp": "2026-07-18T23:59:59Z",
+        "timestamp": "9999-12-31T23:59:59Z",
         "type": "event_msg",
         "payload": payload,
     }
@@ -85,7 +85,7 @@ def append_progress(rollout: Path, child_id: str | None, secret: str = "") -> No
 
 def append_terminal(rollout: Path, child_id: str) -> None:
     record = {
-        "timestamp": "2026-07-18T23:59:59Z",
+        "timestamp": "9999-12-31T23:59:59Z",
         "type": "event_msg",
         "payload": {"type": "task_complete", "agent_id": child_id},
     }

@@ -11,12 +11,12 @@ from scripts.manager_decision import ManagerAction, decide_manager_action
 from scripts.manager_goal import GoalGuard, fence_goal_handoff, require_goal_guard
 from scripts.manager_interrupt import InterruptController
 from scripts.manager_messages import continuation_prompt, result_turn_id
+from scripts.manager_outcome import resolve_turn_outcome
 from scripts.manager_runtime import (
     ManagerRuntime,
     load_manager_runtime,
     mark_manager_ready,
     record_manager_failure,
-    record_turn_finished,
     record_turn_started,
 )
 from scripts.manager_shutdown import handle_shutdown
@@ -103,8 +103,15 @@ class ManagerEngine:
             if self._client.pending_server_request is not None:
                 return self._fail(runtime, "server_request_unhandled")
             owned_turn = runtime.view.managed_turn_id
-            if owned_turn is not None and self._client.turn_completed(owned_turn):
-                return self._finish_completed_turn(runtime, owned_turn)
+            outcome = None if owned_turn is None else self._client.turn_outcome(owned_turn)
+            if owned_turn is not None and outcome is not None:
+                resolution = resolve_turn_outcome(
+                    self._root, runtime, self._goal_guard, owned_turn, outcome
+                )
+                if resolution.failure_reason is not None:
+                    return self._fail(runtime, resolution.failure_reason)
+                self._restart_prompt_pending = resolution.restart_prompt_pending
+                return resolution.keep_running
             if runtime.shutdown_requested:
                 if owned_turn is None:
                     self.close()
@@ -119,15 +126,10 @@ class ManagerEngine:
         except GoalControlError as error:
             if error.reason_code == "goal_complete":
                 disable_session(self._root, runtime.session_id)
-                return False
-            return self._fail(runtime, error.reason_code)
-
-    def _finish_completed_turn(self, runtime: ManagerRuntime, turn_id: str) -> bool:
-        if runtime.shutdown_requested:
-            disable_session(self._root, runtime.session_id)
-            return False
-        record_turn_finished(self._root, runtime.runtime_file, turn_id)
-        return True
+                keep_running = False
+            else:
+                keep_running = self._fail(runtime, error.reason_code)
+            return keep_running
 
     def _execute_decision(self, runtime: ManagerRuntime) -> bool:
         active_turn = self._client.active_turn(runtime.session_id)
@@ -218,9 +220,7 @@ class ManagerEngine:
                 self._callbacks.goal_turn_verifier, runtime.rollout_file, source_cursor, turn_id
             )
         self._record_turn_started(runtime, turn_id)
-        if self._client.turn_completed(turn_id):
-            record_turn_finished(self._root, runtime.runtime_file, turn_id)
-        elif self._restart_prompt_pending:
+        if self._client.turn_outcome(turn_id) is None and self._restart_prompt_pending:
             _ = self._client.request(
                 "turn/steer",
                 {

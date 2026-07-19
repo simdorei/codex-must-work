@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from scripts.app_server_protocol import TurnOutcome
 from scripts.manager_callbacks import ManagerCallbacks
 from scripts.manager_engine import ManagerEngine
 from scripts.state import StateDocument, load_state, runtime_path, save_state
@@ -18,6 +19,7 @@ class FakeGoalAppServer:
         self.calls: list[str] = []
         self.active: str | None = None
         self.completed: set[str] = set()
+        self.turn_outcomes: dict[str, TurnOutcome] = {}
         self.pending_server_request: str | None = None
         self.goal_status: str = "active"
         self.goal_created_at: int = 10
@@ -34,11 +36,12 @@ class FakeGoalAppServer:
             "tokenBudget": None,
         }
 
-    def finish_active_turn(self) -> str:
+    def finish_active_turn(self, outcome: TurnOutcome = TurnOutcome.COMPLETED) -> str:
         """Complete one turn and model Goal auto-continuation only while active."""
         assert self.active is not None
         finished = self.active
         self.completed.add(finished)
+        self.turn_outcomes[finished] = outcome
         self.active = None
         if self.goal_status == "active" and self.start_on_resume:
             self.turn_number += 1
@@ -72,6 +75,7 @@ class FakeGoalAppServer:
             return {"goal": self._goal()}
         if method == "turn/interrupt" and self.active is not None:
             self.completed.add(self.active)
+            self.turn_outcomes[self.active] = TurnOutcome.INTERRUPTED
             self.active = None
         return {}
 
@@ -81,6 +85,12 @@ class FakeGoalAppServer:
 
     def turn_completed(self, turn_id: str) -> bool:
         return turn_id in self.completed
+
+    def turn_outcome(self, turn_id: str) -> TurnOutcome | None:
+        outcome = self.turn_outcomes.get(turn_id)
+        if outcome is not None:
+            return outcome
+        return TurnOutcome.COMPLETED if turn_id in self.completed else None
 
     def latest_started_turn(self, thread_id: str) -> str | None:
         _ = thread_id

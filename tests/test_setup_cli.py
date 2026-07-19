@@ -17,7 +17,11 @@ def test_cli_manual_disable_requests_owned_turn_interrupt(
     codex_home = tmp_path / "codex-home"
     root = codex_home / "codex-must-work"
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    _ = enable_session(root, request(root, observe_only=False), managed_report())
+    _ = enable_session(
+        root,
+        request(root, observe_only=False, goal_companion=True),
+        managed_report(),
+    )
     path = runtime_path(root, SESSION_ID)
     document = load_state(root, path)
     values = dict(document.values)
@@ -118,6 +122,7 @@ def test_cli_auto_restart_launches_managed_owner_only_with_safe_permission_mode(
             "--message-preset",
             "cleanup",
             "--auto-restart",
+            "--goal-companion",
             "--permission-mode",
             "bypassPermissions",
         ]
@@ -154,6 +159,7 @@ def test_cli_auto_restart_rejects_permission_mode_that_can_prompt(
             "--message-preset",
             "continue",
             "--auto-restart",
+            "--goal-companion",
             "--permission-mode",
             "default",
         ]

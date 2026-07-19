@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from enum import StrEnum, unique
 from typing import TYPE_CHECKING
 
 from scripts.manager_runtime import (
     ManagerRuntime,
     RestartRequest,
+    restart_claim_is_current,
     restart_request_from_values,
 )
 from scripts.manager_runtime_values import bump_revision
@@ -22,6 +25,16 @@ if TYPE_CHECKING:
     from scripts.watcher_models import MonitorTarget, RuntimeTarget
 
 
+@unique
+class InterruptClaimState(StrEnum):
+    """Classify whether one terminal interruption authorizes replacement."""
+
+    MATCHED = "matched"
+    UNCLAIMED = "unclaimed"
+    EXPIRED = "expired"
+    MISMATCH = "mismatch"
+
+
 def claim_restart_request(root: Path, runtime: ManagerRuntime) -> bool:
     """Atomically claim fresh evidence so the watcher cannot clear it mid-interrupt."""
     if runtime.restart_request is None or runtime.restart_claimed:
@@ -33,6 +46,7 @@ def claim_restart_request(root: Path, runtime: ManagerRuntime) -> bool:
         if not _request_is_fresh(root, runtime, values):
             return False
         values["restart_claimed"] = True
+        values["restart_claimed_at"] = datetime.now(UTC).isoformat()
         bump_revision(values, runtime.runtime_file)
         return True
 
@@ -65,6 +79,24 @@ def clear_restart_request(root: Path, runtime: ManagerRuntime) -> None:
     _ = mutate_existing_state(root, runtime.runtime_file, clear)
 
 
+def classify_interrupt_claim(
+    runtime: ManagerRuntime,
+    turn_id: str,
+    *,
+    now: datetime | None = None,
+) -> InterruptClaimState:
+    """Require the exact recent claim before replacing an interrupted turn."""
+    if not runtime.restart_claimed:
+        return InterruptClaimState.UNCLAIMED
+    request = runtime.restart_request
+    if request is None or request.turn_id != turn_id or runtime.restart_claimed_at is None:
+        return InterruptClaimState.MISMATCH
+    observed_at = datetime.now(UTC) if now is None else now
+    if not restart_claim_is_current(runtime.restart_claimed_at, observed_at):
+        return InterruptClaimState.EXPIRED
+    return InterruptClaimState.MATCHED
+
+
 def _ownership_matches(target: RuntimeTarget, request: RestartRequest) -> bool:
     if (
         not target.managed_mode
@@ -86,6 +118,7 @@ def _ownership_matches(target: RuntimeTarget, request: RestartRequest) -> bool:
 def _clear_request(values: dict[str, JsonValue], path: Path) -> None:
     values["restart_request"] = None
     values["restart_claimed"] = False
+    values["restart_claimed_at"] = None
     bump_revision(values, path)
 
 

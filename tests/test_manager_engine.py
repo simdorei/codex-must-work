@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from scripts.app_server_protocol import TurnOutcome
 from scripts.manager_callbacks import ManagerCallbacks
 from scripts.manager_engine import ManagerEngine
 from scripts.state import StateDocument, load_state, save_state
@@ -48,6 +49,27 @@ def test_manager_owns_handoff_then_interrupts_and_restarts_exact_turn(tmp_path: 
     ]
 
 
+def test_legacy_goal_less_external_interrupt_disables_without_replacement(tmp_path: Path) -> None:
+    root, path = manager_runtime_fixture(tmp_path)
+    client = FakeAppServer()
+    engine = ManagerEngine(
+        root,
+        path.name,
+        client,
+        pid=123,
+        callbacks=ManagerCallbacks(watcher_launcher=lambda: None),
+    )
+    engine.initialize()
+    assert engine.tick() is True
+    client.completed.add("turn-1")
+    client.turn_outcomes["turn-1"] = TurnOutcome.INTERRUPTED
+    client.active = None
+
+    assert engine.tick() is False
+    assert not path.exists()
+    assert client.turn_number == 1
+
+
 def test_manager_cancels_restart_when_rollout_progress_arrives(tmp_path: Path) -> None:
     root, path = manager_runtime_fixture(tmp_path)
     client = FakeAppServer()
@@ -63,7 +85,7 @@ def test_manager_cancels_restart_when_rollout_progress_arrives(tmp_path: Path) -
     arm_restart(root, path, "turn-1")
     rollout = tmp_path / "sessions" / "rollout.jsonl"
     record = {
-        "timestamp": "2026-07-18T23:59:59Z",
+        "timestamp": "9999-12-31T23:59:59Z",
         "type": "response_item",
         "payload": {"type": "reasoning", "id": "item-1", "turn_id": "turn-1"},
     }

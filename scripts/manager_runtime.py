@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Final
 
 from scripts.diagnostics import DiagnosticCode, DiagnosticEvent, MonitorState, append_diagnostic
 from scripts.hook_state import start_managed_parent
@@ -61,6 +61,7 @@ class ManagerRuntime:
     executable_sha256: str
     restart_request: RestartRequest | None
     restart_claimed: bool
+    restart_claimed_at: datetime | None
     view: ManagerView
     manager_ready: bool
     manager_pid: int | None
@@ -96,6 +97,7 @@ def load_manager_runtime(root: Path, runtime_name: str) -> ManagerRuntime | None
         executable_sha256=string_value(values, "executable_sha256", path),
         restart_request=request,
         restart_claimed=bool_value(values, "restart_claimed", path),
+        restart_claimed_at=_optional_datetime(values, "restart_claimed_at", path),
         view=ManagerView(
             enabled=bool_value(values, "enabled", path) and managed,
             handoff_requested=bool_value(values, "handoff_requested", path),
@@ -189,6 +191,7 @@ def record_turn_started(root: Path, path: Path, turn_id: str) -> None:
         values["handoff_requested"] = False
         values["restart_request"] = None
         values["restart_claimed"] = False
+        values["restart_claimed_at"] = None
         start_managed_parent(values, turn_id, datetime.now(UTC).isoformat(), path)
         bump_revision(values, path)
 
@@ -206,7 +209,13 @@ def record_turn_finished(root: Path, path: Path, turn_id: str) -> None:
     _ = mutate_existing_state(root, path, update)
 
 
-def record_restart_performed(root: Path, path: Path, turn_id: str) -> None:
+def record_restart_performed(
+    root: Path,
+    path: Path,
+    turn_id: str,
+    *,
+    now: datetime | None = None,
+) -> None:
     """Acknowledge one exact interrupt and queue its replacement turn."""
 
     def update(values: dict[str, JsonValue]) -> str:
@@ -217,6 +226,10 @@ def record_restart_performed(root: Path, path: Path, turn_id: str) -> None:
             fail("restart_turn_not_owned")
         if values.get("restart_claimed") is not True:
             fail("restart_request_not_claimed")
+        claimed_at = _optional_datetime(values, "restart_claimed_at", path)
+        observed_at = datetime.now(UTC) if now is None else now
+        if claimed_at is None or not restart_claim_is_current(claimed_at, observed_at):
+            fail("interrupt_claim_expired")
         count = values.get("restart_count")
         if type(count) is not int or count < 0:
             raise CorruptStateError(path, CorruptReason.INVALID_VALUE)
@@ -266,5 +279,34 @@ def _finish_turn(values: dict[str, JsonValue], path: Path) -> None:
     values["managed_turn_id"] = None
     values["restart_request"] = None
     values["restart_claimed"] = False
+    values["restart_claimed_at"] = None
     values["handoff_requested"] = True
     bump_revision(values, path)
+
+
+_RESTART_CLAIM_TTL: Final = timedelta(seconds=60)
+
+
+def restart_claim_is_current(claimed_at: datetime, now: datetime) -> bool:
+    """Accept one recent, non-future interrupt claim."""
+    age = now.astimezone(UTC) - claimed_at.astimezone(UTC)
+    return timedelta() <= age <= _RESTART_CLAIM_TTL
+
+
+def _optional_datetime(
+    values: Mapping[str, JsonValue],
+    key: str,
+    path: Path,
+) -> datetime | None:
+    value = values.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise CorruptStateError(path, CorruptReason.INVALID_VALUE)
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as error:
+        raise CorruptStateError(path, CorruptReason.INVALID_VALUE) from error
+    if parsed.tzinfo is None:
+        raise CorruptStateError(path, CorruptReason.INVALID_VALUE)
+    return parsed.astimezone(UTC)

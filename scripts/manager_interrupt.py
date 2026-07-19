@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, final
 
+from scripts.app_server_protocol import TurnOutcome
 from scripts.manager_restart_guard import (
     claim_restart_request,
     clear_restart_request,
@@ -61,6 +62,22 @@ class InterruptController:
         )
         if not self._client.wait_turn_completed(turn_id):
             return InterruptResult(failure_reason="interrupt_timeout")
+        return self._finish_interrupt(runtime, turn_id)
+
+    def _finish_interrupt(
+        self,
+        runtime: ManagerRuntime,
+        turn_id: str,
+    ) -> InterruptResult:
+        outcome = self._client.turn_outcome(turn_id)
+        if outcome is TurnOutcome.FAILED:
+            return InterruptResult(failure_reason="turn_failed")
+        if outcome is TurnOutcome.COMPLETED:
+            return InterruptResult()
+        if outcome is TurnOutcome.IN_PROGRESS or outcome is TurnOutcome.INVALID:
+            return InterruptResult(failure_reason="turn_status_invalid")
+        if outcome is not TurnOutcome.INTERRUPTED:
+            return InterruptResult(failure_reason="turn_interrupted_external")
         if runtime.message_preset == "cleanup":
             _ = self._client.request(
                 "thread/backgroundTerminals/clean",

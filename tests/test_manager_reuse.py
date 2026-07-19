@@ -54,6 +54,7 @@ def ready_manager(
         "--message-preset",
         "cleanup",
         "--auto-restart",
+        "--goal-companion",
         "--permission-mode",
         "bypassPermissions",
     ]
@@ -78,7 +79,7 @@ def ready_manager(
 def test_enable_session_refuses_existing_runtime_without_mutation(tmp_path: Path) -> None:
     # Given: an existing managed runtime contains resident-manager progress.
     root = tmp_path / "codex-home" / "codex-must-work"
-    activation = request(root, observe_only=False)
+    activation = request(root, observe_only=False, goal_companion=True)
     _ = enable_session(root, activation, managed_report())
     path = runtime_path(root, SESSION_ID)
     values = dict(load_state(root, path).values)

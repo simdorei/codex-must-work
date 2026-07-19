@@ -41,6 +41,7 @@ def defer_session_shutdown(
         values["handoff_requested"] = False
         values["restart_request"] = None
         values["restart_claimed"] = False
+        values["restart_claimed_at"] = None
         revision = values.get("revision", 0)
         if type(revision) is not int or revision < 0:
             raise CorruptStateError(path, CorruptReason.INVALID_VALUE)

@@ -113,6 +113,8 @@ def enable_session(
     )
     if request.goal_companion and not effective_auto_restart:
         raise ActivationError(reason_code="goal_companion_requires_managed_restart")
+    if effective_auto_restart and not request.goal_companion:
+        raise ActivationError(reason_code="managed_restart_requires_native_goal")
     capability_values: dict[str, JsonValue] = {
         "warning_delivery_ready": capabilities.warning_delivery_ready,
         "auto_restart_ready": capabilities.auto_restart_ready,
@@ -148,6 +150,7 @@ def enable_session(
         "managed_turn_id": None,
         "restart_request": None,
         "restart_claimed": False,
+        "restart_claimed_at": None,
         "restart_count": 0,
         "turn_activity_epoch": 0,
         "shutdown_requested": False,

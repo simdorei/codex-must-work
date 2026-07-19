@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from pathlib import Path
 
 from scripts.manager_runtime import (
@@ -91,12 +92,19 @@ def test_restart_completion_clears_only_exact_request_and_requeues_handoff(
         "progress_epoch": 0,
     }
     values["restart_claimed"] = True
+    values["restart_claimed_at"] = "2026-07-18T00:00:00+00:00"
     save_state(root, path, StateDocument(values=values))
 
-    record_restart_performed(root, path, "turn-1")
+    record_restart_performed(
+        root,
+        path,
+        "turn-1",
+        now=datetime(2026, 7, 18, 0, 0, 1, tzinfo=UTC),
+    )
 
     runtime = load_state(root, path).values
     assert runtime["restart_request"] is None
+    assert runtime["restart_claimed_at"] is None
     assert runtime["managed_turn_id"] is None
     assert runtime["handoff_requested"] is True
     assert runtime["restart_count"] == 1

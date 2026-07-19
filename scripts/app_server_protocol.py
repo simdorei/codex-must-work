@@ -3,12 +3,24 @@
 from __future__ import annotations
 
 import json
+from enum import StrEnum, unique
 from typing import TYPE_CHECKING, Protocol, cast, final
 
 if TYPE_CHECKING:
     from scripts.state_io import JsonValue
 
 type JsonObject = dict[str, JsonValue]
+
+
+@unique
+class TurnOutcome(StrEnum):
+    """Status classifications observed at the `turn/completed` boundary."""
+
+    COMPLETED = "completed"
+    INTERRUPTED = "interrupted"
+    FAILED = "failed"
+    IN_PROGRESS = "inProgress"
+    INVALID = "invalid"
 
 
 class ManagedAppServer(Protocol):
@@ -39,6 +51,10 @@ class ManagedAppServer(Protocol):
 
     def turn_completed(self, turn_id: str) -> bool:
         """Return whether this connection observed exact-turn completion."""
+        ...
+
+    def turn_outcome(self, turn_id: str) -> TurnOutcome | None:
+        """Return the exact status classification observed for one turn."""
         ...
 
     def latest_started_turn(self, thread_id: str) -> str | None:
@@ -89,7 +105,7 @@ class AppServerEventState:
         self.active_turns: dict[str, str] = {}
         self.latest_started_turns: dict[str, str] = {}
         self.started_turns: set[str] = set()
-        self.completed_turns: set[str] = set()
+        self.turn_outcomes: dict[str, TurnOutcome] = {}
         self.pending_server_request: str | None = None
 
     def record(self, message: JsonObject) -> None:
@@ -113,6 +129,7 @@ class AppServerEventState:
                 self.active_turns[thread_id] = turn_id
                 self.latest_started_turns[thread_id] = turn_id
         elif method == "turn/completed" and turn_id is not None:
+            outcome = _turn_outcome(params)
             if thread_id is not None and self.active_turns.get(thread_id) == turn_id:
                 _ = self.active_turns.pop(thread_id, None)
             elif thread_id is None:
@@ -121,7 +138,7 @@ class AppServerEventState:
                     for active_thread, active_turn in self.active_turns.items()
                     if active_turn != turn_id
                 }
-            self.completed_turns.add(turn_id)
+            _ = self.turn_outcomes.setdefault(turn_id, outcome)
 
     def take_response(self, request_id: str) -> JsonObject | None:
         """Remove and return one response matched by request id."""
@@ -137,7 +154,7 @@ class AppServerEventState:
 
     def bind_started_turn(self, thread_id: str, turn_id: str) -> bool:
         """Bind a thread-less start notification to its initiating request."""
-        if turn_id in self.completed_turns:
+        if turn_id in self.turn_outcomes:
             return True
         if turn_id not in self.started_turns:
             return False
@@ -151,7 +168,11 @@ class AppServerEventState:
 
     def was_completed(self, turn_id: str) -> bool:
         """Return whether this connection observed the turn completion."""
-        return turn_id in self.completed_turns
+        return turn_id in self.turn_outcomes
+
+    def turn_outcome(self, turn_id: str) -> TurnOutcome | None:
+        """Return one validated status classification without collapsing its meaning."""
+        return self.turn_outcomes.get(turn_id)
 
 
 def _thread_id(params: JsonObject) -> str | None:
@@ -189,6 +210,19 @@ def decode_object(raw_line: str) -> JsonObject | None:
     except json.JSONDecodeError:
         return None
     return decoded if isinstance(decoded, dict) else None
+
+
+def _turn_outcome(params: JsonObject) -> TurnOutcome:
+    turn = params.get("turn")
+    if not isinstance(turn, dict):
+        return TurnOutcome.INVALID
+    status = _string(turn, "status")
+    if status is None:
+        return TurnOutcome.INVALID
+    try:
+        return TurnOutcome(status)
+    except ValueError:
+        return TurnOutcome.INVALID
 
 
 def response_result(method: str, response: JsonObject) -> JsonObject:

@@ -155,6 +155,11 @@ def test_fast_completed_goal_turn_is_adopted_without_resume_timeout(tmp_path: Pa
     assert engine.tick() is True
 
     runtime = load_state(root, path).values
+    assert runtime["managed_turn_id"] == "turn-goal-1"
+    assert runtime["handoff_requested"] is False
+
+    assert engine.tick() is True
+    runtime = load_state(root, path).values
     assert runtime["managed_turn_id"] is None
     assert runtime["handoff_requested"] is True
     assert runtime["manager_error"] is None

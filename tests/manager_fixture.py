@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import final
 
+from scripts.app_server_protocol import TurnOutcome
 from scripts.state import StateDocument, load_state, runtime_path, save_state
 from scripts.state_io import JsonValue
 from scripts.watcher_source import initial_cursor, save_cursor
@@ -13,6 +14,7 @@ class FakeAppServer:
         self.calls: list[str] = []
         self.active: str | None = None
         self.completed: set[str] = set()
+        self.turn_outcomes: dict[str, TurnOutcome] = {}
         self.pending_server_request: str | None = None
         self.turn_number: int = 0
 
@@ -35,6 +37,7 @@ class FakeAppServer:
             return {"turn": {"id": self.active}}
         if method == "turn/interrupt" and self.active is not None:
             self.completed.add(self.active)
+            self.turn_outcomes[self.active] = TurnOutcome.INTERRUPTED
             self.active = None
         return {}
 
@@ -44,6 +47,12 @@ class FakeAppServer:
 
     def turn_completed(self, turn_id: str) -> bool:
         return turn_id in self.completed
+
+    def turn_outcome(self, turn_id: str) -> TurnOutcome | None:
+        outcome = self.turn_outcomes.get(turn_id)
+        if outcome is not None:
+            return outcome
+        return TurnOutcome.COMPLETED if turn_id in self.completed else None
 
     def latest_started_turn(self, thread_id: str) -> str | None:
         _ = thread_id

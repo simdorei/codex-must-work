@@ -71,6 +71,7 @@ def queue_restart_request(
         "turn_activity_epoch": turn_activity_epoch(values, runtime.runtime_file),
     }
     values["restart_claimed"] = False
+    values["restart_claimed_at"] = None
 
 
 def cancel_unclaimed_restart_for_activity(
@@ -85,3 +86,4 @@ def cancel_unclaimed_restart_for_activity(
         return
     values["restart_request"] = None
     values["restart_claimed"] = False
+    values["restart_claimed_at"] = None
