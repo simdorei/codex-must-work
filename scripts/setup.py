@@ -8,23 +8,25 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum, unique
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, override
+from typing import TYPE_CHECKING, Final
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from scripts.activation_error import ActivationError
+from scripts.activation_validation import validate_activation_request
 from scripts.diagnostics import (
     DiagnosticCode,
     DiagnosticEvent,
     MonitorState,
     append_diagnostic,
 )
-from scripts.durations import validate_thresholds
+from scripts.manager_lease import manager_lease_owner
 from scripts.private_root import ensure_private_root
-from scripts.session_identity import SessionIdentityError, require_bound_rollout
 from scripts.session_shutdown import defer_session_shutdown
 from scripts.state import (
     StateDocument,
+    StateError,
     config_path,
     cursor_path,
     runtime_path,
@@ -38,13 +40,15 @@ if TYPE_CHECKING:
 
 from scripts.state_io import (
     ExclusiveWriteLock,
-    ensure_existing_components_are_direct,
+    ensure_direct_regular_file,
     prepare_parent_directories,
 )
 
 _OBSERVE_ONLY_REASONS: Final = frozenset(
     {"same_live_server_attach_unavailable", "auto_restart_controls_unavailable", "ready"}
 )
+
+__all__ = ("ActivationError", "validate_activation_request")
 
 
 @unique
@@ -88,24 +92,13 @@ class ActivationResult:
     stop_continuation_active: bool
 
 
-@dataclass(frozen=True, slots=True)
-class ActivationError(Exception):
-    """Report activation failure with a stable public-safe reason."""
-
-    reason_code: str
-
-    @override
-    def __str__(self) -> str:
-        return f"Codex Must Work was not enabled: {self.reason_code}"
-
-
 def enable_session(
     root: Path,
     request: ActivationRequest,
     capabilities: CapabilityReport,
 ) -> ActivationResult:
     """Enable one session only after all requested capabilities are proven."""
-    relative_transcript = _validate_request(root, request)
+    relative_transcript = validate_activation_request(root, request)
     if request.observe_only:
         if capabilities.reason_code not in _OBSERVE_ONLY_REASONS:
             raise ActivationError(reason_code=capabilities.reason_code)
@@ -170,13 +163,23 @@ def enable_session(
     ensure_private_root(root)
     operation = root / "operation"
     prepare_parent_directories(root, operation)
+    runtime_file = runtime_path(root, request.session_id)
     with ExclusiveWriteLock(operation):
-        save_state(root, config_path(root), StateDocument(values=config_values))
+        ensure_direct_regular_file(root, runtime_file)
+        if runtime_file.exists():
+            raise ActivationError(reason_code="session_already_enabled")
+        if manager_lease_owner(root, runtime_file.name) is not None:
+            raise ActivationError(reason_code="session_manager_still_running")
         save_state(
             root,
-            runtime_path(root, request.session_id),
+            runtime_file,
             StateDocument(values=runtime_values),
         )
+        try:
+            save_state(root, config_path(root), StateDocument(values=config_values))
+        except (OSError, StateError):
+            _remove_uncommitted_runtime(root, runtime_file)
+            raise
     return ActivationResult(
         warning_delivery_active=(capabilities.warning_delivery_ready and not request.observe_only),
         effective_auto_restart=effective_auto_restart,
@@ -207,6 +210,13 @@ def disable_session(root: Path, session_id: str) -> None:
         with ExclusiveWriteLock(runtime):
             runtime.unlink(missing_ok=True)
             cursor.unlink(missing_ok=True)
+
+
+def _remove_uncommitted_runtime(root: Path, runtime_file: Path) -> None:
+    ensure_direct_regular_file(root, runtime_file)
+    with ExclusiveWriteLock(runtime_file):
+        ensure_direct_regular_file(root, runtime_file)
+        runtime_file.unlink(missing_ok=True)
 
 
 def complete_session(root: Path, session_id: str, now: datetime) -> None:
@@ -247,32 +257,6 @@ def request_session_shutdown(
         interrupt_active=interrupt_active,
     ):
         disable_session(root, session_id)
-
-
-def _validate_request(root: Path, request: ActivationRequest) -> str:
-    _ = validate_thresholds(
-        request.settings.warning_after_ms,
-        request.settings.restart_after_ms,
-    )
-    relative = _relative_transcript(root, request.transcript_path)
-    try:
-        _ = require_bound_rollout(request.transcript_path, request.session_id)
-    except SessionIdentityError as error:
-        raise ActivationError(reason_code=error.reason_code) from error
-    return relative
-
-
-def _relative_transcript(root: Path, transcript: Path) -> str:
-    if not transcript.is_absolute() or not transcript.is_file():
-        raise ActivationError(reason_code="transcript_path_invalid")
-    try:
-        codex_home = root.parent.resolve()
-        resolved = transcript.resolve()
-        relative = resolved.relative_to(codex_home)
-        ensure_existing_components_are_direct(codex_home, resolved)
-    except (OSError, RuntimeError, ValueError) as error:
-        raise ActivationError(reason_code="transcript_path_outside_codex_home") from error
-    return relative.as_posix()
 
 
 def _utc_text(value: datetime) -> str:

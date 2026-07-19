@@ -1,3 +1,5 @@
+import os
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Event, Thread
@@ -165,6 +167,25 @@ def test_activation_persists_config_and_only_current_session(tmp_path: Path) -> 
     assert runtime["transcript_path"] == "sessions/rollout.jsonl"
     assert runtime["children"] == {}
     assert SESSION_ID not in runtime_file.name
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows extended paths")
+def test_activation_accepts_windows_extended_rollout_path(tmp_path: Path) -> None:
+    # Given: Codex reports the valid rollout with the Windows extended-path prefix.
+    root = tmp_path / "codex-home" / "codex-must-work"
+    activation = request(root, observe_only=True)
+    extended = Path("\\\\?\\" + str(activation.transcript_path))
+
+    # When: the current session is activated from that locator path.
+    _ = enable_session(
+        root,
+        replace(activation, transcript_path=extended),
+        unavailable_report(),
+    )
+
+    # Then: activation stores the same CODEX_HOME-relative rollout identity.
+    runtime = load_state(root, runtime_path(root, SESSION_ID)).values
+    assert runtime["transcript_path"] == "sessions/rollout.jsonl"
 
 
 def test_disable_removes_runtime_and_cursor_but_keeps_config(tmp_path: Path) -> None:

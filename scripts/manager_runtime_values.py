@@ -94,6 +94,22 @@ def int_value(
     return value
 
 
+def optional_int_value(
+    values: Mapping[str, JsonValue],
+    key: str,
+    path: Path,
+    *,
+    minimum: int,
+) -> int | None:
+    """Read one optional integer at or above its minimum."""
+    value = values.get(key)
+    if value is None:
+        return None
+    if type(value) is not int or value < minimum:
+        raise CorruptStateError(path, CorruptReason.INVALID_VALUE)
+    return value
+
+
 def require_managed(values: dict[str, JsonValue], path: Path) -> None:
     """Require an enabled managed runtime before mutation."""
     if values.get("enabled") is not True or values.get("managed_mode") is not True:

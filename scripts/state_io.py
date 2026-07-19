@@ -87,22 +87,27 @@ class ExclusiveWriteLock:
         self,
         state_path: Path,
         timeout_seconds: float = _LOCK_TIMEOUT_SECONDS,
+        *,
+        create: bool = True,
     ) -> None:
         """Bind a lock file to one state path and bounded wait."""
         self.state_path = state_path
         self.timeout_seconds = timeout_seconds
+        self.create = create
         self._descriptor: int | None = None
 
     def __enter__(self) -> None:
         """Acquire this state file's exclusive lock."""
         lock_path = self._path()
-        descriptor = _open_direct_file(lock_path, os.O_CREAT | os.O_RDWR)
+        flags = os.O_RDWR | (os.O_CREAT if self.create else 0)
+        descriptor = open_direct_file(lock_path, flags)
         acquired = False
         try:
-            lock_path.chmod(_FILE_MODE)
-            if os.fstat(descriptor).st_size == 0:
-                _ = os.write(descriptor, b"\0")
-                os.fsync(descriptor)
+            if self.create:
+                lock_path.chmod(_FILE_MODE)
+                if os.fstat(descriptor).st_size == 0:
+                    _ = os.write(descriptor, b"\0")
+                    os.fsync(descriptor)
             _acquire_descriptor(descriptor, lock_path, self.timeout_seconds)
             acquired = True
         finally:
@@ -186,22 +191,6 @@ def ensure_direct_regular_file(root: Path, path: Path) -> None:
         raise UnsafeStatePathError(root_absolute, path_absolute)
 
 
-def write_private_text(root: Path, path: Path, value: str) -> None:
-    """Write a small private marker without following a final redirect."""
-    root_absolute, path_absolute = safe_absolute_path(root, path)
-    descriptor = _open_direct_file(path_absolute, os.O_CREAT | os.O_WRONLY)
-    try:
-        payload = value.encode("ascii")
-        os.ftruncate(descriptor, 0)
-        _ = os.write(descriptor, payload)
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-    ensure_direct_regular_file(root_absolute, path_absolute)
-    if os.name != "nt":
-        path_absolute.chmod(_FILE_MODE, follow_symlinks=False)
-
-
 def ensure_existing_components_are_direct(root: Path, path: Path) -> None:
     """Reject symlink, junction, and Windows reparse-point redirects."""
     relative = path.relative_to(root)
@@ -268,7 +257,8 @@ def atomic_json_write(
             temporary_path.unlink(missing_ok=True)
 
 
-def _open_direct_file(path: Path, flags: int) -> int:
+def open_direct_file(path: Path, flags: int) -> int:
+    """Open one regular single-link file without following its final path."""
     no_follow = getattr(os, "O_NOFOLLOW", 0)
     try:
         descriptor = os.open(path, flags | no_follow, _FILE_MODE)

@@ -28,6 +28,7 @@ from scripts.hook_payload import (
     serialize_stop_continuation,
 )
 from scripts.hook_state import apply_hook_event, safe_transcript_path
+from scripts.path_identity import resolve_local_path
 from scripts.private_root import ensure_private_root
 from scripts.state import (
     CorruptReason,
@@ -89,7 +90,7 @@ def _session_locator(
     )
     return SessionLocator(
         session_id=payload.session_id,
-        transcript_path=str(Path(payload.transcript_path).resolve()),
+        transcript_path=str(resolve_local_path(payload.transcript_path)),
         plugin_root=str(active_plugin_root),
         plugin_data=str(plugin_data.resolve()),
         permission_mode=payload.permission_mode,

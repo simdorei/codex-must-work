@@ -1,11 +1,10 @@
 param(
-    [switch] $ForwardStdin,
-    [Parameter(ValueFromRemainingArguments = $true)]
-    [string[]] $PythonArgs
+    [switch] $ForwardStdin
 )
 
 $ErrorActionPreference = 'Stop'
 $env:PYTHONUTF8 = '1'
+$PythonArgs = [string[]] $args
 $Version = '3.12.13+20260510'
 $ExpectedHash = '24168aff2e7d93784c6a436124c4ebb79b076a4e289bde4902c08333507b71d0'
 

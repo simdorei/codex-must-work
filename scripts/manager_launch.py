@@ -10,7 +10,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import override
 
-from scripts.manager_runtime import load_manager_runtime, request_manager_startup_cancel
+from scripts.manager_lease import manager_lease_owner
+from scripts.manager_runtime import (
+    ManagerRuntime,
+    load_manager_runtime,
+    request_manager_startup_cancel,
+)
 
 _WINDOWS_DETACHED_FLAGS = 0x08000008
 MANAGER_INITIALIZATION_BUDGET_SECONDS = 38.0
@@ -27,6 +32,23 @@ class ManagerLaunchError(RuntimeError):
     @override
     def __str__(self) -> str:
         return self.reason_code
+
+
+def active_manager(root: Path, runtime_file: Path) -> ManagerRuntime | None:
+    """Return a healthy ready manager only when runtime and lease PIDs match."""
+    runtime = load_manager_runtime(root, runtime_file.name)
+    if (
+        runtime is None
+        or not runtime.manager_ready
+        or not runtime.view.enabled
+        or runtime.shutdown_requested
+        or runtime.manager_error is not None
+        or runtime.manager_pid is None
+    ):
+        return None
+    if manager_lease_owner(root, runtime_file.name) != runtime.manager_pid:
+        return None
+    return runtime
 
 
 def launch_manager(
@@ -82,6 +104,13 @@ def _wait_until_ready(
         if runtime.manager_error is not None:
             raise ManagerLaunchError(runtime.manager_error)
         if runtime.manager_ready:
+            if process.poll() is not None:
+                message = "manager_process_exited"
+                raise ManagerLaunchError(message)
+            owner = manager_lease_owner(root, runtime_file.name)
+            if runtime.manager_pid != process.pid or owner != process.pid:
+                message = "manager_owner_mismatch"
+                raise ManagerLaunchError(message)
             return process.pid
         if process.poll() is not None:
             message = "manager_process_exited"

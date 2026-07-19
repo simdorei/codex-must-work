@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import assert_never
+from typing import TYPE_CHECKING, assert_never
 from uuid import uuid4
 
 from scripts.activity_epoch import advance_monitor_progress_epoch, advance_turn_activity_epoch
 from scripts.hook_payload import HookEvent, HookPayload
+from scripts.path_identity import resolve_local_path
 from scripts.state import CorruptReason, CorruptStateError, JsonValue
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def apply_hook_event(
@@ -42,9 +45,9 @@ def safe_transcript_path(raw: str | None, root: Path) -> str | None:
     """Return a CODEX_HOME-relative rollout path or reject it."""
     if raw is None:
         return None
-    codex_home = root.parent.resolve()
+    codex_home = resolve_local_path(root.parent)
     try:
-        return Path(raw).resolve().relative_to(codex_home).as_posix()
+        return resolve_local_path(raw).relative_to(codex_home).as_posix()
     except (OSError, RuntimeError, ValueError):
         return None
 

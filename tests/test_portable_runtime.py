@@ -129,6 +129,52 @@ def test_windows_launcher_bootstraps_embedded_python_without_path(
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows launcher E2E runs only on Windows")
+def test_windows_launcher_forwards_warning_option_to_python(tmp_path: Path) -> None:
+    # Given: a Python command containing the CLI option that overlaps PowerShell common parameters.
+    launcher = _ROOT / "runtime" / "launch-python.ps1"
+    powershell = (
+        Path(os.environ["SYSTEMROOT"])
+        / "System32"
+        / "WindowsPowerShell"
+        / "v1.0"
+        / "powershell.exe"
+    )
+    environment = os.environ.copy()
+    environment["PATH"] = ""
+    environment["PLUGIN_DATA"] = str(tmp_path)
+
+    # When: the portable launcher forwards the command.
+    result = subprocess.run(  # noqa: S603
+        [
+            str(powershell),
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(launcher),
+            "-c",
+            "import json,sys;print(json.dumps(sys.argv[1:]))",
+            "--warning",
+            "90s",
+            "--restart",
+            "5m",
+        ],
+        check=False,
+        cwd=_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    # Then: Python receives every option literally and in order.
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == ["--warning", "90s", "--restart", "5m"]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows launcher E2E runs only on Windows")
 def test_windows_launcher_forwards_hook_stdin(tmp_path: Path) -> None:
     launcher = _ROOT / "runtime" / "launch-python.ps1"
     hook = _ROOT / "scripts" / "hook_event.py"

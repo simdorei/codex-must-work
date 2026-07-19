@@ -1,8 +1,11 @@
 import json
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final, Protocol
 from unittest.mock import patch
+
+import pytest
 
 from scripts.calibration import CalibrationRecommendation, CalibrationStatus
 from scripts.durations import Milliseconds
@@ -177,3 +180,34 @@ def test_process_hook_rejects_mismatched_transcript_before_state_mutation() -> N
         assert result is None
         assert load_state(root, path).values == before
         launch.assert_not_called()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows extended paths")
+def test_managed_stop_accepts_windows_extended_rollout_identity(tmp_path: Path) -> None:
+    # Given: a managed runtime stores the rollout relative to CODEX_HOME.
+    codex_home = tmp_path / "codex-home"
+    root = codex_home / "codex-must-work"
+    path = enabled_runtime(root)
+    transcript = codex_home / "sessions" / "rollout.jsonl"
+    transcript.parent.mkdir(parents=True)
+    transcript.touch()
+    values = dict(load_state(root, path).values)
+    values.update(
+        {
+            "managed_mode": True,
+            "handoff_requested": False,
+            "shutdown_requested": False,
+            "transcript_path": "sessions/rollout.jsonl",
+            "revision": 0,
+        }
+    )
+    save_state(root, path, StateDocument(values=values))
+
+    # When: Codex sends Stop with the equivalent Windows extended path.
+    _ = process_hook(
+        hook_event("Stop", transcript_path="\\\\?\\" + str(transcript)),
+        root=root,
+    )
+
+    # Then: the resident manager receives the continuation handoff.
+    assert load_state(root, path).values["handoff_requested"] is True

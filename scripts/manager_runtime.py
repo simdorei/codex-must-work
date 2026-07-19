@@ -16,6 +16,7 @@ from scripts.manager_runtime_values import (
     bump_revision,
     fail,
     int_value,
+    optional_int_value,
     optional_string,
     require_managed,
     runtime_file,
@@ -62,6 +63,7 @@ class ManagerRuntime:
     restart_claimed: bool
     view: ManagerView
     manager_ready: bool
+    manager_pid: int | None
     shutdown_requested: bool
     shutdown_interrupt: bool
     manager_error: str | None
@@ -102,6 +104,7 @@ def load_manager_runtime(root: Path, runtime_name: str) -> ManagerRuntime | None
             goal_companion=goal_companion,
         ),
         manager_ready=bool_value(values, "manager_ready", path),
+        manager_pid=optional_int_value(values, "manager_pid", path, minimum=1),
         shutdown_requested=bool_value(values, "shutdown_requested", path),
         shutdown_interrupt=bool_value(values, "shutdown_interrupt", path),
         manager_error=optional_string(values, "manager_error", path),

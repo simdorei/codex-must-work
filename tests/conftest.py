@@ -15,6 +15,7 @@ def private_root_boundaries(monkeypatch: pytest.MonkeyPatch) -> None:
         root.mkdir(exist_ok=True)
 
     monkeypatch.setattr("scripts.setup.ensure_private_root", secure)
+    monkeypatch.setattr("scripts.manager_reuse.ensure_private_root", secure, raising=False)
     monkeypatch.setattr("scripts.hook_event.ensure_private_root", secure)
     monkeypatch.setattr("scripts.watcher.ensure_private_root", secure)
     monkeypatch.setattr("scripts.calibration_state.ensure_private_root", secure)

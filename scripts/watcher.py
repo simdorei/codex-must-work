@@ -19,7 +19,8 @@ if __package__ in {None, ""}:
 
 from scripts.private_root import ensure_private_root
 from scripts.state import StateError, StateLockTimeoutError, state_root
-from scripts.state_io import ExclusiveWriteLock, safe_absolute_path, write_private_text
+from scripts.state_io import ExclusiveWriteLock, safe_absolute_path
+from scripts.state_text import write_private_text
 from scripts.watcher_engine import WatcherEngine
 
 _POLL_SECONDS: Final = 1.0
