@@ -1,0 +1,12 @@
+{
+  "name": "simdorei",
+  "plugins": [
+    {
+      "name": "codex-must-work",
+      "source": {
+        "source": "local",
+        "path": "./"
+      }
+    }
+  ]
+}

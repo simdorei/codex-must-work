@@ -7,6 +7,42 @@
 안전 조건을 통과한 경우에만 같은 작업을 재개합니다. `cleanup` 메시지를 선택하면 작업이
 끝났는데 남아 있는 작업 소유 프로세스를 정리한 뒤 계속하라고 지시할 수 있습니다.
 
+## OpenAI Build Week
+
+Codex Must Work is an opt-in progress supervisor for one Codex task. It distinguishes a turn that is
+merely marked busy from one that is producing real progress, records privacy-safe local diagnostics,
+and can resume only the exact managed turn after strict ownership and safety checks. It does not call
+a model API at runtime or send prompt, response, or tool contents to an external monitoring service.
+
+### How we used Codex and GPT-5.6
+
+We built and reviewed the project in Codex with GPT-5.6. Codex explored the existing plugin and hook
+interfaces, implemented the Python and PowerShell runtime, and repeatedly ran the regression suite,
+linting, type checks, and installation smoke tests. GPT-5.6 helped us reason through the hard failure
+modes: exact-turn ownership, stale-busy detection, safe manager reuse, path identity across platforms,
+activation races, and fail-closed behavior. At runtime the plugin integrates with Codex skills, hooks,
+and privacy-filtered local rollout metadata; GPT-5.6 is the development agent, not a hidden runtime API
+dependency.
+
+## Installation
+
+Codex Must Work supports Windows x64, Linux x64, and macOS ARM64. Add this repository as a Codex
+plugin marketplace, then install the plugin:
+
+```bash
+codex plugin marketplace add simdorei/codex-must-work --ref main
+codex plugin add codex-must-work@simdorei
+```
+
+Restart ChatGPT desktop or Codex, open a new thread, approve the local hook if Codex asks, and run
+`$work-on`. Judges can use this read-only smoke test:
+
+```text
+$work-on Objective: perform a read-only check that the current working directory exists. Success criteria: confirm it exists, make no file changes, then use the verified-completion path of $work-off and reply WORK_ON_VERIFIED.
+```
+
+The expected final reply is `WORK_ON_VERIFIED`; verified completion also disables the task supervisor.
+
 ## 사용법
 
 현재 스레드에서 다음 한 줄로 켭니다.
