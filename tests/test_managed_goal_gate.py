@@ -4,7 +4,11 @@ import os
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from scripts.setup import complete_session, disable_session, enable_session
+from scripts.setup import (
+    disable_session,
+    enable_session,
+    request_verified_completion,
+)
 from scripts.setup_cli import main
 from scripts.state import StateDocument, load_state, runtime_path, save_state
 from tests.rollout_fixture import SESSION_ID, write_session_meta
@@ -48,12 +52,18 @@ def test_managed_completion_waits_for_owned_turn_before_runtime_removal(tmp_path
     values["manager_ready"] = True
     save_state(root, path, StateDocument(values=values))
 
-    complete_session(root, SESSION_ID, datetime(2026, 7, 18, tzinfo=UTC))
+    deferred = request_verified_completion(
+        root,
+        SESSION_ID,
+        datetime(2026, 7, 18, tzinfo=UTC),
+    )
 
     runtime = load_state(root, path).values
+    assert deferred is True
     assert runtime["shutdown_requested"] is True
     assert runtime["shutdown_interrupt"] is False
     assert runtime["managed_turn_id"] == "turn-owned"
+    assert not (root / "logs" / "diagnostic.jsonl").exists()
 
 
 def test_managed_disable_removes_runtime_when_manager_never_became_ready(

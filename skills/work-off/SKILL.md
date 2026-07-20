@@ -18,7 +18,7 @@ description: Disable Codex Must Work for only the current task, interrupting its
      --completed
    ```
 
-   This records one final completion heartbeat. A managed owner lets the final turn finish before deleting its runtime. On Linux or macOS, pass the same arguments through `PLUGIN_DATA='<plugin_data>' sh '<plugin_root>/runtime/launch-python.sh' '<plugin_root>/scripts/setup_cli.py'`.
+   For a managed turn, this records a verified-completion request. The managed owner records the completion heartbeat only after the final turn finishes normally, then deletes its runtime. On Linux or macOS, pass the same arguments through `PLUGIN_DATA='<plugin_data>' sh '<plugin_root>/runtime/launch-python.sh' '<plugin_root>/scripts/setup_cli.py'`.
 4. Otherwise run:
 
    ```powershell

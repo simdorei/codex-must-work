@@ -221,7 +221,7 @@ def _remove_uncommitted_runtime(root: Path, runtime_file: Path) -> None:
 
 
 def complete_session(root: Path, session_id: str, now: datetime) -> None:
-    """Record one completion heartbeat before disabling this session."""
+    """Record one terminal completion heartbeat and disable this session."""
     if not session_id.strip():
         raise ActivationError(reason_code="session_id_missing")
     runtime = runtime_path(root, session_id)
@@ -242,7 +242,15 @@ def complete_session(root: Path, session_id: str, now: datetime) -> None:
             event_id=event_id,
         ),
     )
-    request_session_shutdown(root, session_id, interrupt_active=False)
+    disable_session(root, session_id)
+
+
+def request_verified_completion(root: Path, session_id: str, now: datetime) -> bool:
+    """Defer managed completion until Final, or complete an unmanaged session now."""
+    if defer_session_shutdown(root, session_id, interrupt_active=False):
+        return True
+    complete_session(root, session_id, now)
+    return False
 
 
 def request_session_shutdown(

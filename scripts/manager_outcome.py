@@ -35,11 +35,14 @@ def resolve_turn_outcome(
     outcome: TurnOutcome,
 ) -> TurnResolution:
     """Apply the exact completion, interruption, or failure contract."""
-    if runtime.shutdown_requested:
-        disable_session(root, runtime.session_id)
-        return TurnResolution(keep_running=False)
     match outcome:
         case TurnOutcome.COMPLETED:
+            if runtime.shutdown_requested:
+                if runtime.shutdown_interrupt:
+                    disable_session(root, runtime.session_id)
+                else:
+                    complete_session(root, runtime.session_id, datetime.now(UTC))
+                return TurnResolution(keep_running=False)
             return _resolve_completed(root, runtime, goal_guard, turn_id)
         case TurnOutcome.INTERRUPTED:
             return _resolve_interrupted(root, runtime, turn_id)
@@ -59,8 +62,7 @@ def _resolve_completed(
 ) -> TurnResolution:
     if not runtime.view.goal_companion:
         record_turn_finished(root, runtime.runtime_file, turn_id)
-        complete_session(root, runtime.session_id, datetime.now(UTC))
-        return TurnResolution(keep_running=False)
+        return TurnResolution(keep_running=True)
     if goal_guard is None:
         return TurnResolution(keep_running=False, failure_reason="goal_identity_missing")
     status = goal_guard.status_after_turn()

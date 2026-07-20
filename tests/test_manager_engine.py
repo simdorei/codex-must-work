@@ -72,8 +72,8 @@ def test_legacy_goal_less_external_interrupt_disables_without_replacement(tmp_pa
     assert client.turn_number == 1
 
 
-def test_goal_less_completed_turn_records_final_and_stops(tmp_path: Path) -> None:
-    # Given: a Goal-less managed turn reaches a normal completed outcome.
+def test_goal_less_completed_turn_without_completion_request_continues(tmp_path: Path) -> None:
+    # Given: a Goal-less managed turn ends without requesting verified completion.
     root, path = manager_runtime_fixture(tmp_path)
     client = FakeAppServer()
     engine = ManagerEngine(
@@ -92,11 +92,13 @@ def test_goal_less_completed_turn_records_final_and_stops(tmp_path: Path) -> Non
     # When: the manager observes that completed turn.
     keep_running = engine.tick()
 
-    # Then: it records one verified final and never starts a replacement.
-    assert keep_running is False
-    assert not path.exists()
+    # Then: it schedules a replacement without claiming that the task succeeded.
+    runtime = load_state(root, path).values
+    assert keep_running is True
+    assert runtime["managed_turn_id"] is None
+    assert runtime["handoff_requested"] is True
     assert client.turn_number == 1
-    assert diagnostic_codes(root).count(DiagnosticCode.WATCHER_COMPLETED.value) == 1
+    assert not (root / "logs" / "diagnostic.jsonl").exists()
 
 
 def test_goal_less_failed_turn_stops_without_final(tmp_path: Path) -> None:

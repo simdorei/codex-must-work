@@ -28,10 +28,10 @@ from scripts.setup import (
     ActivationRequest,
     MessagePreset,
     Settings,
-    complete_session,
     disable_session,
     enable_session,
     request_session_shutdown,
+    request_verified_completion,
 )
 from scripts.setup_cli_args import CliArgs, Command, parse_cli
 from scripts.state import config_path, load_state, runtime_path, state_root
@@ -59,8 +59,13 @@ def main(argv: list[str] | None = None) -> int:
 
 def _disable(root: Path, args: CliArgs) -> int:
     if args.completed:
-        complete_session(root, args.session_id, datetime.now(UTC))
-        _ = sys.stdout.write("Codex Must Work completed; final heartbeat recorded.\n")
+        deferred = request_verified_completion(root, args.session_id, datetime.now(UTC))
+        message = (
+            "Codex Must Work completion requested; waiting for final turn.\n"
+            if deferred
+            else "Codex Must Work completed; final heartbeat recorded.\n"
+        )
+        _ = sys.stdout.write(message)
         return 0
     request_session_shutdown(root, args.session_id, interrupt_active=True)
     _ = sys.stdout.write("Codex Must Work disabled for the current task.\n")
