@@ -4,10 +4,12 @@ import json
 from typing import TYPE_CHECKING
 
 from scripts.app_server_protocol import TurnOutcome
+from scripts.diagnostics import DiagnosticCode
 from scripts.manager_callbacks import ManagerCallbacks
 from scripts.manager_engine import ManagerEngine
 from scripts.state import StateDocument, load_state, save_state
 from tests.manager_fixture import FakeAppServer, arm_restart, manager_runtime_fixture
+from tests.watcher_fixture import diagnostic_codes
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -68,6 +70,61 @@ def test_legacy_goal_less_external_interrupt_disables_without_replacement(tmp_pa
     assert engine.tick() is False
     assert not path.exists()
     assert client.turn_number == 1
+
+
+def test_goal_less_completed_turn_records_final_and_stops(tmp_path: Path) -> None:
+    # Given: a Goal-less managed turn reaches a normal completed outcome.
+    root, path = manager_runtime_fixture(tmp_path)
+    client = FakeAppServer()
+    engine = ManagerEngine(
+        root,
+        path.name,
+        client,
+        pid=123,
+        callbacks=ManagerCallbacks(watcher_launcher=lambda: None),
+    )
+    engine.initialize()
+    assert engine.tick() is True
+    client.completed.add("turn-1")
+    client.turn_outcomes["turn-1"] = TurnOutcome.COMPLETED
+    client.active = None
+
+    # When: the manager observes that completed turn.
+    keep_running = engine.tick()
+
+    # Then: it records one verified final and never starts a replacement.
+    assert keep_running is False
+    assert not path.exists()
+    assert client.turn_number == 1
+    assert diagnostic_codes(root).count(DiagnosticCode.WATCHER_COMPLETED.value) == 1
+
+
+def test_goal_less_failed_turn_stops_without_final(tmp_path: Path) -> None:
+    # Given: a Goal-less managed turn ends with a failed outcome.
+    root, path = manager_runtime_fixture(tmp_path)
+    client = FakeAppServer()
+    engine = ManagerEngine(
+        root,
+        path.name,
+        client,
+        pid=123,
+        callbacks=ManagerCallbacks(watcher_launcher=lambda: None),
+    )
+    engine.initialize()
+    assert engine.tick() is True
+    client.completed.add("turn-1")
+    client.turn_outcomes["turn-1"] = TurnOutcome.FAILED
+    client.active = None
+
+    # When: the manager observes the failure.
+    keep_running = engine.tick()
+
+    # Then: it stops without a completion heartbeat or replacement turn.
+    runtime = load_state(root, path).values
+    assert keep_running is False
+    assert runtime["manager_error"] == "turn_failed"
+    assert client.turn_number == 1
+    assert DiagnosticCode.WATCHER_COMPLETED.value not in diagnostic_codes(root)
 
 
 def test_manager_cancels_restart_when_rollout_progress_arrives(tmp_path: Path) -> None:

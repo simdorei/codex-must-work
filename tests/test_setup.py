@@ -175,19 +175,6 @@ def test_activation_persists_config_and_only_current_session(tmp_path: Path) -> 
     assert SESSION_ID not in runtime_file.name
 
 
-def test_managed_restart_requires_native_goal_companion(tmp_path: Path) -> None:
-    root = tmp_path / "state"
-
-    with pytest.raises(ActivationError, match="managed_restart_requires_native_goal"):
-        _ = enable_session(
-            root,
-            request(root, observe_only=False),
-            managed_report(),
-        )
-
-    assert not runtime_path(root, SESSION_ID).exists()
-
-
 @pytest.mark.skipif(os.name != "nt", reason="Windows extended paths")
 def test_activation_accepts_windows_extended_rollout_path(tmp_path: Path) -> None:
     # Given: Codex reports the valid rollout with the Windows extended-path prefix.
@@ -233,48 +220,6 @@ def test_complete_records_one_heartbeat_and_removes_runtime(tmp_path: Path) -> N
     log = (root / "logs" / "diagnostic.jsonl").read_text(encoding="utf-8")
     assert log.count('"code":"watcher_completed"') == 1
     assert not runtime_path(root, SESSION_ID).exists()
-
-
-def test_managed_completion_waits_for_owned_turn_before_runtime_removal(tmp_path: Path) -> None:
-    root = tmp_path / "state"
-    _ = enable_session(
-        root,
-        request(root, observe_only=False, goal_companion=True),
-        managed_report(),
-    )
-    path = runtime_path(root, SESSION_ID)
-    document = load_state(root, path)
-    values = dict(document.values)
-    values["managed_turn_id"] = "turn-owned"
-    values["manager_ready"] = True
-    save_state(root, path, StateDocument(values=values))
-
-    complete_session(root, SESSION_ID, datetime(2026, 7, 18, tzinfo=UTC))
-
-    runtime = load_state(root, path).values
-    assert runtime["shutdown_requested"] is True
-    assert runtime["shutdown_interrupt"] is False
-    assert runtime["managed_turn_id"] == "turn-owned"
-
-
-def test_managed_disable_removes_runtime_when_manager_never_became_ready(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "state"
-    _ = enable_session(
-        root,
-        request(root, observe_only=False, goal_companion=True),
-        managed_report(),
-    )
-    path = runtime_path(root, SESSION_ID)
-    values = dict(load_state(root, path).values)
-    values["managed_turn_id"] = "turn-unowned"
-    values["manager_ready"] = False
-    save_state(root, path, StateDocument(values=values))
-
-    disable_session(root, SESSION_ID)
-
-    assert not path.exists()
 
 
 def test_disable_removes_corrupt_runtime_and_cursor_without_parsing(

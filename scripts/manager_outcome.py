@@ -59,25 +59,27 @@ def _resolve_completed(
 ) -> TurnResolution:
     if not runtime.view.goal_companion:
         record_turn_finished(root, runtime.runtime_file, turn_id)
-        return TurnResolution(keep_running=True)
+        complete_session(root, runtime.session_id, datetime.now(UTC))
+        return TurnResolution(keep_running=False)
     if goal_guard is None:
         return TurnResolution(keep_running=False, failure_reason="goal_identity_missing")
     status = goal_guard.status_after_turn()
-    if status is GoalStatus.ACTIVE:
-        return _continue_active_goal(root, runtime, goal_guard, turn_id)
-    if status is GoalStatus.PAUSED:
-        record_turn_finished(root, runtime.runtime_file, turn_id)
-        return TurnResolution(keep_running=True)
-    if status is GoalStatus.COMPLETE:
-        return _complete_goal(root, runtime, turn_id)
-    if status is GoalStatus.BLOCKED:
-        failure_reason = "goal_blocked"
-    elif status is GoalStatus.USAGE_LIMITED:
-        failure_reason = "goal_usage_limited"
-    elif status is GoalStatus.BUDGET_LIMITED:
-        failure_reason = "goal_budget_limited"
-    else:
-        assert_never(status)
+    match status:
+        case GoalStatus.ACTIVE:
+            return _continue_active_goal(root, runtime, goal_guard, turn_id)
+        case GoalStatus.PAUSED:
+            record_turn_finished(root, runtime.runtime_file, turn_id)
+            return TurnResolution(keep_running=True)
+        case GoalStatus.COMPLETE:
+            return _complete_goal(root, runtime, turn_id)
+        case GoalStatus.BLOCKED:
+            failure_reason = "goal_blocked"
+        case GoalStatus.USAGE_LIMITED:
+            failure_reason = "goal_usage_limited"
+        case GoalStatus.BUDGET_LIMITED:
+            failure_reason = "goal_budget_limited"
+        case _:
+            assert_never(status)
     return TurnResolution(keep_running=False, failure_reason=failure_reason)
 
 
