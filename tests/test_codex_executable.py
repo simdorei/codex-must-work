@@ -22,6 +22,29 @@ def test_resolver_uses_only_codex_home_sandbox_binary(
     assert resolve_codex_executable() == executable.resolve()
 
 
+def test_resolver_prefers_complete_plugin_app_server_bundle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Given: the legacy sandbox copy lacks the code-mode host, while Codex's plugin bundle has it.
+    codex_home = tmp_path / "codex-home"
+    sandbox_executable = codex_home / ".sandbox-bin" / "codex.exe"
+    sandbox_executable.parent.mkdir(parents=True)
+    sandbox_executable.touch()
+    plugin_bundle = codex_home / "plugins" / ".plugin-appserver"
+    plugin_bundle.mkdir(parents=True)
+    plugin_executable = plugin_bundle / "codex.exe"
+    plugin_executable.touch()
+    (plugin_bundle / "codex-code-mode-host.exe").touch()
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
+    # When: the resident manager resolves the trusted Codex executable.
+    resolved = resolve_codex_executable()
+
+    # Then: it selects the complete bundle so managed turns can execute tools.
+    assert resolved == plugin_executable.resolve()
+
+
 def test_resolver_fails_when_trusted_binary_is_missing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

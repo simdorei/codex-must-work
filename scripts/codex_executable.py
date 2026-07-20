@@ -33,10 +33,26 @@ def resolve_codex_executable(expected_sha256: str | None = None) -> Path:
     if not codex_home.is_absolute():
         raise CodexExecutableError(_UNSAFE_HOME)
     name = "codex.exe" if os.name == "nt" else "codex"
-    path = _verified(codex_home / ".sandbox-bin" / name)
+    host_name = "codex-code-mode-host.exe" if os.name == "nt" else "codex-code-mode-host"
+    sandbox_bundle = codex_home / ".sandbox-bin"
+    plugin_bundle = codex_home / "plugins" / ".plugin-appserver"
+    path = _complete_bundle_executable(sandbox_bundle, name, host_name)
+    if path is None:
+        path = _complete_bundle_executable(plugin_bundle, name, host_name)
+    if path is None:
+        path = _verified(sandbox_bundle / name)
     if expected_sha256 is not None and _executable_sha256(path) != expected_sha256:
         raise CodexExecutableError(_DIGEST_MISMATCH)
     return path
+
+
+def _complete_bundle_executable(bundle: Path, name: str, host_name: str) -> Path | None:
+    try:
+        executable = _verified(bundle / name)
+        _ = _verified(bundle / host_name)
+    except CodexExecutableError:
+        return None
+    return executable
 
 
 def _executable_sha256(path: Path) -> str:

@@ -1,6 +1,6 @@
 {
   "name": "codex-must-work",
-  "version": "0.1.0+codex.20260720012701",
+  "version": "0.1.0+codex.20260720112837",
   "description": "Opt-in progress heartbeats, adaptive thresholds, and exact-turn managed restart for one Codex thread.",
   "author": {
     "name": "banpo"
