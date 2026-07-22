@@ -98,9 +98,11 @@ def _apply_event(
         case HookEvent.USER_PROMPT_SUBMIT:
             if payload.turn_id is None:
                 return False
+            previous_turn_id = values.get("parent_turn_id")
+            previous_parent = _monitor(values, children, None, path)
             _start_parent(values, children, payload.turn_id, now, path)
             _clear_waits(values, children, path)
-            return True
+            return previous_turn_id != payload.turn_id or previous_parent is None
         case HookEvent.SUBAGENT_START:
             return _start_child(values, children, payload.agent_id, now, path)
         case HookEvent.SUBAGENT_STOP:

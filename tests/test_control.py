@@ -1,3 +1,5 @@
+import pytest
+
 from scripts.control import CapabilityInputs, current_capabilities, evaluate_capabilities
 
 
@@ -107,3 +109,17 @@ def test_current_runtime_supports_stop_continuation_without_live_attach() -> Non
     assert report.stop_continuation_ready is True
     assert report.warning_delivery_ready is False
     assert report.auto_restart_ready is False
+
+
+def test_current_capabilities_do_not_query_platform_wmi(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail() -> str:
+        pytest.fail("platform module must not be queried")
+
+    for name in ("system", "release"):
+        monkeypatch.setattr(f"platform.{name}", fail)
+
+    report = current_capabilities("codex-a", "desktop-a", "schema-a")
+
+    assert report.evidence_fingerprint

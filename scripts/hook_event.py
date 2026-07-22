@@ -107,6 +107,8 @@ def _process_enabled_event(
     path = runtime_path(active_root, payload.session_id)
     if not path.is_file():
         return None
+    if load_state(active_root, path).values.get("enabled") is not True:
+        return None
     ensure_private_root(active_root)
 
     def update(values: dict[str, JsonValue]) -> tuple[bool, bool] | None:

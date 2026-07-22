@@ -30,7 +30,7 @@ from scripts.manager_runtime_values import ManagerRuntimeError
 from scripts.private_root import ensure_private_root
 from scripts.state import StateError, state_root
 
-_POLL_SECONDS = 0.25
+_POLL_SECONDS = 1.0
 _EXPECTED_ARGUMENT_COUNT = 2
 
 if TYPE_CHECKING:

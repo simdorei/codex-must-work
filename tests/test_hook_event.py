@@ -4,6 +4,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+import pytest
+
 from scripts.hook_event import process_hook
 from scripts.hook_payload import StopContinuation
 from scripts.state import (
@@ -14,6 +16,63 @@ from scripts.state import (
 )
 from tests.hook_fixture import enabled_runtime as _enabled_runtime
 from tests.hook_fixture import hook_event as _event
+
+_INACTIVE_EVENTS = (
+    "UserPromptSubmit",
+    "SubagentStart",
+    "SubagentStop",
+    "PreToolUse",
+    "PostToolUse",
+    "PermissionRequest",
+    "Stop",
+)
+
+
+@pytest.mark.parametrize("event", _INACTIVE_EVENTS)
+@pytest.mark.parametrize("runtime", ["missing", "disabled"])
+def test_inactive_non_session_event_is_silent_and_state_stable(
+    event: str,
+    runtime: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with TemporaryDirectory() as temporary_directory:
+        root = Path(temporary_directory) / "codex-must-work"
+        path = root / "runtime" / "session-1.json"
+        before: bytes | None = None
+        if runtime == "disabled":
+            path = _enabled_runtime(root)
+            document = load_state(root, path)
+            values = dict(document.values)
+            values["enabled"] = False
+            save_state(root, path, StateDocument(values=values))
+            before = path.read_bytes()
+
+        with patch("scripts.hook_event._launch_watcher") as launch:
+            result = process_hook(_event(event), root=root)
+
+        captured = capsys.readouterr()
+        assert result is None
+        assert captured == ("", "")
+        launch.assert_not_called()
+        assert path.exists() is (runtime == "disabled")
+        if before is not None:
+            assert path.read_bytes() == before
+
+
+def test_disabled_runtime_skips_expensive_private_root_verification() -> None:
+    with TemporaryDirectory() as temporary_directory:
+        root = Path(temporary_directory) / "codex-must-work"
+        path = _enabled_runtime(root)
+        document = load_state(root, path)
+        values = dict(document.values)
+        values["enabled"] = False
+        save_state(root, path, StateDocument(values=values))
+
+        with patch("scripts.hook_event.ensure_private_root") as ensure:
+            result = process_hook(_event("UserPromptSubmit"), root=root)
+
+        assert result is None
+        ensure.assert_not_called()
 
 
 def test_process_hook_when_subagent_starts_saves_allowlist_before_launch() -> None:
@@ -114,6 +173,18 @@ def test_process_hook_when_main_turn_starts_saves_parent_before_launch() -> None
         assert len(observed_parent) == 1
         assert isinstance(observed_parent[0], dict)
         assert observed_parent[0]["status"] == "running"
+
+
+def test_replayed_user_prompt_does_not_launch_duplicate_watcher() -> None:
+    with TemporaryDirectory() as temporary_directory:
+        root = Path(temporary_directory) / "codex-must-work"
+        _ = _enabled_runtime(root)
+
+        with patch("scripts.hook_event._launch_watcher") as launch:
+            _ = process_hook(_event("UserPromptSubmit"), root=root)
+            _ = process_hook(_event("UserPromptSubmit"), root=root)
+
+        launch.assert_called_once_with()
 
 
 def test_process_hook_routes_main_tool_and_permission_events_to_parent() -> None:

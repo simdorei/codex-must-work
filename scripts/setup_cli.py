@@ -36,6 +36,7 @@ from scripts.setup import (
 from scripts.setup_cli_args import CliArgs, Command, parse_cli
 from scripts.state import config_path, load_state, runtime_path, state_root
 from scripts.state_io import StateError
+from scripts.watcher_launch import launch_watcher
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -92,6 +93,7 @@ def _enable(root: Path, args: CliArgs) -> int:
         return 0
     result = enable_session(root, request, report)
     if args.observe_only:
+        _launch_watcher_or_rollback(root, args.session_id)
         _ = sys.stdout.write("Codex Must Work observe-only enabled; no warnings or restarts.\n")
         return 0
     if result.effective_auto_restart:
@@ -100,6 +102,8 @@ def _enable(root: Path, args: CliArgs) -> int:
         except (ManagerLaunchError, OSError, StateError):
             disable_session(root, args.session_id)
             raise
+    else:
+        _launch_watcher_or_rollback(root, args.session_id)
     warning = result.warning_delivery_active
     restart = result.effective_auto_restart
     continuation = result.stop_continuation_active
@@ -110,6 +114,14 @@ def _enable(root: Path, args: CliArgs) -> int:
     )
     _ = sys.stdout.write(message)
     return 0
+
+
+def _launch_watcher_or_rollback(root: Path, session_id: str) -> None:
+    try:
+        launch_watcher()
+    except OSError as error:
+        disable_session(root, session_id)
+        raise ActivationError(reason_code="watcher_process_start_failed") from error
 
 
 def _capability_report(settings: Settings, args: CliArgs) -> CapabilityReport:

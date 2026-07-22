@@ -61,3 +61,32 @@ def test_late_terminal_from_prior_child_generation_is_ignored_by_start_time() ->
     )
 
     assert terminal is False
+
+
+def test_parent_monitor_counts_child_activity_as_whole_turn_progress() -> None:
+    target = MonitorTarget(
+        target_id=None,
+        generation=1,
+        terminal=False,
+        open_tool_count=0,
+        waiting_for_approval=False,
+        waiting_for_user=False,
+        progress_epoch=0,
+        started_at=None,
+    )
+    event = ObservedEvent(
+        kind=EventKind.DELTA,
+        occurred_at=datetime(2026, 7, 18, tzinfo=UTC),
+        turn_id="child-turn",
+        child_id="child-1",
+    )
+
+    state, terminal = apply_target_events(
+        set(),
+        target,
+        initial_state(0.0),
+        TargetEventContext((event,), 1.0, "turn-parent"),
+    )
+
+    assert state.delta_at == 1.0
+    assert terminal is False

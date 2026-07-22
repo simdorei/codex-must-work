@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-import platform
+import sys
 from dataclasses import dataclass
 from typing import Final
 
@@ -74,7 +74,7 @@ def current_capabilities(
 ) -> CapabilityReport:
     """Return the conservative capabilities of the currently probed runtime."""
     fingerprint_source = (
-        f"{platform.system()}|{platform.release()}|{codex_version}|{desktop_build}|"
+        f"{sys.platform}|{sys.implementation.name}|{codex_version}|{desktop_build}|"
         f"{PLUGIN_VERSION}|{control_api_schema}"
     )
     fingerprint = hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()

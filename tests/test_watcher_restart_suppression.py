@@ -37,6 +37,7 @@ def test_parent_can_restart_after_temporarily_suppressing_child_finishes(tmp_pat
     append_terminal(rollout, "child-1")
     assert engine.tick(302.0, WALL_TIME) is True
     assert engine.tick(603.0, WALL_TIME) is True
+    assert engine.tick(604.0, WALL_TIME) is True
 
     request = load_state(root, path).values["restart_request"]
     assert isinstance(request, dict)

@@ -10,6 +10,11 @@ from tests.rollout_fixture import SESSION_ID, write_session_meta
 from tests.test_setup import managed_report, ready_report, request
 
 
+@pytest.fixture(autouse=True)
+def prevent_real_watcher_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("scripts.setup_cli.launch_watcher", lambda: None)
+
+
 def test_cli_manual_disable_requests_owned_turn_interrupt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -66,6 +71,12 @@ def test_cli_normal_enable_uses_stop_continuation_without_live_attach(
     transcript = codex_home / "sessions" / "rollout.jsonl"
     write_session_meta(transcript)
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    watcher_launches: list[bool] = []
+    monkeypatch.setattr(
+        "scripts.setup_cli.launch_watcher",
+        lambda: watcher_launches.append(True),
+        raising=False,
+    )
 
     exit_code = main(
         [
@@ -86,6 +97,7 @@ def test_cli_normal_enable_uses_stop_continuation_without_live_attach(
     assert exit_code == 0
     root = codex_home / "codex-must-work"
     assert runtime_path(root, SESSION_ID).is_file()
+    assert watcher_launches == [True]
 
 
 def test_cli_auto_restart_launches_managed_owner_only_with_safe_permission_mode(

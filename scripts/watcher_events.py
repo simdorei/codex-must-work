@@ -99,9 +99,11 @@ def _event_matches_target(
     target: MonitorTarget,
     parent_turn_id: str | None,
 ) -> bool:
-    if event.child_id != target.target_id:
-        return False
     if target.started_at is not None and event.occurred_at < target.started_at:
+        return False
+    if target.target_id is None and event.child_id is not None:
+        return True
+    if event.child_id != target.target_id:
         return False
     return not (
         target.target_id is None
