@@ -67,8 +67,18 @@ def test_hooks_use_only_the_portable_runtime_launcher() -> None:
     # When / Then: no system Python command remains at the bootstrap boundary.
     assert "python3 " not in hooks
     assert "py -3 " not in hooks
-    assert hooks.count("launch-python") == 16
-    assert hooks.count("-ForwardStdin") == 8
+    assert hooks.count("launch-python") == 6
+    assert hooks.count("-ForwardStdin") == 3
+
+
+def test_hooks_register_only_low_frequency_lifecycle_events() -> None:
+    hooks = cast(
+        "dict[str, object]",
+        json.loads((_ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8")),
+    )
+    registered = cast("dict[str, object]", hooks["hooks"])
+
+    assert set(registered) == {"SessionStart", "UserPromptSubmit", "Stop"}
 
 
 def test_skills_use_only_the_portable_runtime_launcher() -> None:

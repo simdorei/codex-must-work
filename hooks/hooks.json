@@ -24,66 +24,6 @@
         ]
       }
     ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh \"${PLUGIN_ROOT}/runtime/launch-python.sh\" \"${PLUGIN_ROOT}/scripts/hook_event.py\"",
-            "commandWindows": "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}/runtime/launch-python.ps1\" -ForwardStdin \"${PLUGIN_ROOT}/scripts/hook_event.py\"",
-            "timeout": 15
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh \"${PLUGIN_ROOT}/runtime/launch-python.sh\" \"${PLUGIN_ROOT}/scripts/hook_event.py\"",
-            "commandWindows": "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}/runtime/launch-python.ps1\" -ForwardStdin \"${PLUGIN_ROOT}/scripts/hook_event.py\"",
-            "timeout": 15
-          }
-        ]
-      }
-    ],
-    "PreToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh \"${PLUGIN_ROOT}/runtime/launch-python.sh\" \"${PLUGIN_ROOT}/scripts/hook_event.py\"",
-            "commandWindows": "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}/runtime/launch-python.ps1\" -ForwardStdin \"${PLUGIN_ROOT}/scripts/hook_event.py\"",
-            "timeout": 15
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh \"${PLUGIN_ROOT}/runtime/launch-python.sh\" \"${PLUGIN_ROOT}/scripts/hook_event.py\"",
-            "commandWindows": "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}/runtime/launch-python.ps1\" -ForwardStdin \"${PLUGIN_ROOT}/scripts/hook_event.py\"",
-            "timeout": 15
-          }
-        ]
-      }
-    ],
-    "PermissionRequest": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh \"${PLUGIN_ROOT}/runtime/launch-python.sh\" \"${PLUGIN_ROOT}/scripts/hook_event.py\"",
-            "commandWindows": "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}/runtime/launch-python.ps1\" -ForwardStdin \"${PLUGIN_ROOT}/scripts/hook_event.py\"",
-            "timeout": 15
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [
