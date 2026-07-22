@@ -1,6 +1,6 @@
 {
   "name": "codex-must-work",
-  "version": "0.1.0+codex.20260720221156",
+  "version": "0.2.0+codex.20260722000000",
   "description": "Opt-in progress heartbeats, adaptive thresholds, and exact-turn managed restart for one Codex thread.",
   "author": {
     "name": "banpo"
@@ -13,6 +13,9 @@
     "task"
   ],
   "skills": "./skills/",
+  "hooks": [
+    "./hooks/hooks.json"
+  ],
   "interface": {
     "displayName": "Codex Must Work",
     "shortDescription": "Keep one opted-in Codex task moving to completion.",

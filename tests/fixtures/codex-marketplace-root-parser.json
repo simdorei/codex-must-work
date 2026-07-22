@@ -1,0 +1,29 @@
+{
+  "source_path": "codex-rs/core-plugins/src/marketplace.rs",
+  "releases": [
+    {
+      "version": "0.144.0-alpha.4",
+      "commit": "049586f41571e74b44c841868bca3a2233214a71",
+      "blob_id": "6475d3787600d813f809098281252b2c361a6dae",
+      "blob_size": 36571,
+      "excerpt_lines": "650-675",
+      "excerpt": "    marketplace_path: &AbsolutePathBuf,\n    path: &str,\n) -> Result<AbsolutePathBuf, MarketplaceError> {\n    match path {\n        \"\" => {\n            return Err(MarketplaceError::InvalidMarketplaceFile {\n                path: marketplace_path.to_path_buf(),\n                message: \"local plugin source path must not be empty\".to_string(),\n            });\n        }\n        \".\" | \"./\" => return marketplace_root_dir(marketplace_path),\n        _ => {}\n    }\n\n    // Non-root local sources must keep the explicit `./` prefix and remain normalized.\n    let Some(relative_path) = path.strip_prefix(\"./\") else {\n        return Err(MarketplaceError::InvalidMarketplaceFile {\n            path: marketplace_path.to_path_buf(),\n            message: \"local plugin source path must start with `./`\".to_string(),\n        });\n    };\n\n    let relative_source_path = Path::new(relative_path);\n    if relative_source_path\n        .components()\n        .any(|component| !matches!(component, Component::Normal(_)))"
+    },
+    {
+      "version": "0.144.0",
+      "commit": "767822446c7a594caa19609ca435281a9ec67e0d",
+      "blob_id": "6475d3787600d813f809098281252b2c361a6dae",
+      "blob_size": 36571,
+      "excerpt_lines": "650-675",
+      "excerpt": "    marketplace_path: &AbsolutePathBuf,\n    path: &str,\n) -> Result<AbsolutePathBuf, MarketplaceError> {\n    match path {\n        \"\" => {\n            return Err(MarketplaceError::InvalidMarketplaceFile {\n                path: marketplace_path.to_path_buf(),\n                message: \"local plugin source path must not be empty\".to_string(),\n            });\n        }\n        \".\" | \"./\" => return marketplace_root_dir(marketplace_path),\n        _ => {}\n    }\n\n    // Non-root local sources must keep the explicit `./` prefix and remain normalized.\n    let Some(relative_path) = path.strip_prefix(\"./\") else {\n        return Err(MarketplaceError::InvalidMarketplaceFile {\n            path: marketplace_path.to_path_buf(),\n            message: \"local plugin source path must start with `./`\".to_string(),\n        });\n    };\n\n    let relative_source_path = Path::new(relative_path);\n    if relative_source_path\n        .components()\n        .any(|component| !matches!(component, Component::Normal(_)))"
+    },
+    {
+      "version": "0.145.0-alpha.18",
+      "commit": "f84f9a6406cc55b210395f71b4c6aed236fc7ebb",
+      "blob_id": "b3ef42c8e9201271e0bcbaa818b3bb1fc3963e3a",
+      "blob_size": 36804,
+      "excerpt_lines": "651-676",
+      "excerpt": "    marketplace_path: &AbsolutePathBuf,\n    path: &str,\n) -> Result<AbsolutePathBuf, MarketplaceError> {\n    match path {\n        \"\" => {\n            return Err(MarketplaceError::InvalidMarketplaceFile {\n                path: marketplace_path.to_path_buf(),\n                message: \"local plugin source path must not be empty\".to_string(),\n            });\n        }\n        \".\" | \"./\" => return marketplace_root_dir(marketplace_path),\n        _ => {}\n    }\n\n    // Non-root local sources must keep the explicit `./` prefix and remain normalized.\n    let relative_path = path.strip_prefix(\"./\").or_else(|| {\n        marketplace_path\n            .as_path()\n            .ends_with(\".cursor-plugin/marketplace.json\")\n            .then_some(path)\n    });\n    let Some(relative_path) = relative_path else {\n        return Err(MarketplaceError::InvalidMarketplaceFile {\n            path: marketplace_path.to_path_buf(),\n            message: \"local plugin source path must start with `./`\".to_string(),\n        });"
+    }
+  ]
+}

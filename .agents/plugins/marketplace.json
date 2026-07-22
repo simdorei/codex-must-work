@@ -1,12 +1,20 @@
 {
-  "name": "simdorei",
+  "name": "codex-must-work-local",
+  "interface": {
+    "displayName": "Codex Must Work Local"
+  },
   "plugins": [
     {
       "name": "codex-must-work",
       "source": {
         "source": "local",
         "path": "./"
-      }
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
     }
   ]
 }
