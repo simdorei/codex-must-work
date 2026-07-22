@@ -87,8 +87,12 @@ def _base(repo: Path) -> str:
         "README.md",
         "tests/test_hook_event.py",
     }
-    modified = set().union(*(rule.modified for rule in RULES))
-    for path in sorted(modified - structured):
+    seen: set[str] = set()
+    modified_at_base: set[str] = set()
+    for rule in RULES:
+        modified_at_base.update(rule.modified - seen)
+        seen.update(rule.paths)
+    for path in sorted(modified_at_base - structured):
         _write(repo, path, f"base:{path}\n")
     _write(
         repo,
@@ -102,7 +106,7 @@ def _base(repo: Path) -> str:
 def _ordinary_commit(repo: Path, index: int) -> None:
     rule = RULES[index]
     for path in sorted(rule.paths - {"tests/test_hook_event.py"}):
-        _write(repo, path, f"fixture:{path}\n")
+        _write(repo, path, f"fixture:{index}:{path}\n")
     if index == 6:
         lines = (
             "import pytest",

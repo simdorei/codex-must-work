@@ -75,17 +75,17 @@ def root_marketplace_snapshot(
             parsed = _LOAD_JSON(result.stdout)
         except json.JSONDecodeError as error:
             raise InstallPluginError(_UNSUPPORTED) from error
-        if result.returncode or result.stderr or not _marketplace_matches(parsed):
+        if result.returncode or not _marketplace_matches(parsed, source):
             _fail(_UNSUPPORTED)
         normalized = json.dumps(parsed, sort_keys=True, separators=(",", ":")).encode()
         return MarketplaceSnapshot(runtime, hashlib.sha256(normalized).hexdigest())
 
 
-def _marketplace_matches(value: JsonValue) -> bool:
+def _marketplace_matches(value: JsonValue, expected_source: Path) -> bool:
     plugins = (
         value
         if isinstance(value, list)
-        else value.get("plugins")
+        else value.get("available", value.get("plugins"))
         if isinstance(value, dict)
         else None
     )
@@ -93,13 +93,24 @@ def _marketplace_matches(value: JsonValue) -> bool:
         return False
     plugin = plugins[0]
     source = plugin.get("source")
-    marketplace = plugin.get("marketplace", plugin.get("marketplace_name", _MARKETPLACE))
+    marketplace = plugin.get(
+        "marketplace",
+        plugin.get("marketplace_name", plugin.get("marketplaceName", _MARKETPLACE)),
+    )
+    source_path = source.get("path") if isinstance(source, dict) else None
+    try:
+        resolved_source = (
+            Path(source_path).resolve(strict=True) if isinstance(source_path, str) else None
+        )
+    except (OSError, RuntimeError):
+        return False
     return (
         plugin.get("name") == _PLUGIN
+        and plugin.get("pluginId", f"{_PLUGIN}@{_MARKETPLACE}") == f"{_PLUGIN}@{_MARKETPLACE}"
         and marketplace == _MARKETPLACE
         and isinstance(source, dict)
         and source.get("source") == "local"
-        and source.get("path") == "./"
+        and resolved_source == expected_source
     )
 
 

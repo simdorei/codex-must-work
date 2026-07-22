@@ -11,6 +11,7 @@ SUBJECTS: Final = (
     "feat(installer): add portable install entrypoints",
     "docs(installer): make trusted setup the default",
     "perf(runtime): reduce hook and watcher overhead",
+    "fix(installer): accept normalized marketplace output",
 )
 
 
@@ -169,6 +170,21 @@ tests/test_hook_event.py
 tests/test_setup_cli.py
 tests/test_watcher_event_races.py
 tests/test_watcher_restart_suppression.py
+"""),
+    ),
+    CommitRule(
+        SUBJECTS[7],
+        _paths("""
+scripts/codex_marketplace_probe.py
+tests/codex_compatibility_support.py
+tests/check_commit_contract.py
+tests/commit_contract_paths.py
+"""),
+        _paths("""
+scripts/codex_marketplace_probe.py
+tests/codex_compatibility_support.py
+tests/check_commit_contract.py
+tests/commit_contract_paths.py
 """),
     ),
 )

@@ -108,15 +108,22 @@ def fake_commands(
             argv,
             0,
             json.dumps(
-                [
-                    {
-                        "name": "codex-must-work",
-                        "marketplace": "codex-must-work-local",
-                        "source": {"source": "local", "path": "./"},
-                    }
-                ]
+                {
+                    "installed": [],
+                    "available": [
+                        {
+                            "pluginId": "codex-must-work@codex-must-work-local",
+                            "name": "codex-must-work",
+                            "marketplaceName": "codex-must-work-local",
+                            "source": {
+                                "source": "local",
+                                "path": parsed["marketplaces"]["codex-must-work-local"]["source"],
+                            },
+                        }
+                    ],
+                }
             ),
-            "",
+            "WARNING: temporary home has no PATH aliases\n",
         )
 
     monkeypatch.setattr(codex_compatibility, "_run_command", run)
@@ -166,4 +173,3 @@ def cloud_cache(*, config: str = "[features]\nhooks = true\n", requirements: str
         },
         separators=(",", ":"),
     ).encode()
-
