@@ -1,0 +1,59 @@
+{
+  "name": "Native POSIX installer",
+  "on": {
+    "push": {
+      "branches": ["**"]
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "ubuntu-x64": {
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {
+          "name": "Checkout candidate",
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ github.sha }}",
+            "persist-credentials": false
+          }
+        },
+        {
+          "name": "Verify candidate SHA",
+          "shell": "bash",
+          "run": "test \"$(git rev-parse HEAD)\" = \"${{ github.sha }}\"\ntest \"$(uname -s)\" = \"Linux\"\ntest \"$(uname -m)\" = \"x86_64\"\nsh -n install.sh\n"
+        },
+        {
+          "name": "Run native installer smoke",
+          "shell": "bash",
+          "run": "python3.12 tests/native_posix_install_smoke.py\n"
+        }
+      ]
+    },
+    "macos-arm64": {
+      "runs-on": "macos-14",
+      "steps": [
+        {
+          "name": "Checkout candidate",
+          "uses": "actions/checkout@v4",
+          "with": {
+            "ref": "${{ github.sha }}",
+            "persist-credentials": false
+          }
+        },
+        {
+          "name": "Verify candidate SHA",
+          "shell": "bash",
+          "run": "test \"$(git rev-parse HEAD)\" = \"${{ github.sha }}\"\ntest \"$(uname -s)\" = \"Darwin\"\ntest \"$(uname -m)\" = \"arm64\"\nsh -n install.sh\n"
+        },
+        {
+          "name": "Run native installer smoke",
+          "shell": "bash",
+          "run": "python3.12 tests/native_posix_install_smoke.py\n"
+        }
+      ]
+    }
+  }
+}
