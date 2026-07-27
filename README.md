@@ -1,11 +1,18 @@
 # Codex Must Work
 
 한 Codex 스레드에 선택적으로 거는 진행 감시 플러그인입니다. 단순히 UI의 `busy` 표시를
-믿지 않고, 로컬 rollout 기록에서 실제 응답·추론·도구 결과가 계속 생기는지 확인합니다.
+믿지 않고, Codex app-server 이벤트와 필요한 경우의 로컬 rollout 증거로 실제
+응답·추론·도구 결과가 계속 생기는지 확인합니다.
 
 진행이 오래 보이지 않으면 로컬 하트비트 진단을 남기고, 더 긴 심각 정체가 확인되면
 안전 조건을 통과한 경우에만 같은 작업을 재개합니다. `cleanup` 메시지를 선택하면 작업이
 끝났는데 남아 있는 작업 소유 프로세스를 정리한 뒤 계속하라고 지시할 수 있습니다.
+
+Codex가 시작하면 CMW MCP 서버 겸 daemon인 Python 프로세스 하나가 시작되어 요청을
+기다립니다. `$work-on`, 상태 확인, `$work-off`, 완료 요청은 이 프로세스에 메시지만 보냅니다.
+별도 watcher와 manager 프로세스는 실행하지 않으며, CMW가 비활성일 때 daemon은 이벤트를
+기다리며 잠듭니다. 활성화 직후에만 daemon 내부에서 rollout의 새 기록을 짧게 증분 확인해
+활성화 턴의 정상 종료를 보증하고, 이후 진행은 app-server 이벤트를 우선 사용합니다.
 
 ## OpenAI Build Week
 
@@ -23,6 +30,16 @@ modes: exact-turn ownership, stale-busy detection, safe manager reuse, path iden
 activation races, and fail-closed behavior. At runtime the plugin integrates with Codex skills, hooks,
 and privacy-filtered local rollout metadata; GPT-5.6 is the development agent, not a hidden runtime API
 dependency.
+
+### Session control capability boundary
+
+Every `cmw.*` control call is bound to an unpredictable capability derived for the current Codex
+session. Knowing another session's identifier is not enough to start, inspect, complete, or stop its
+CMW task. The master key remains in the protected plugin data root, while the derived capability is
+passed only through Codex-owned local session context and MCP arguments and is excluded from
+user-visible output and product logs. This boundary does not protect against code running as the same
+operating-system user with arbitrary access to Codex transcripts or plugin data, or against a
+compromised Codex process.
 
 ## Installation
 
@@ -47,9 +64,9 @@ Linux 또는 macOS:
 사용하지 않습니다.
 
 설치 또는 업데이트가 끝나면 ChatGPT 데스크톱이나 Codex를 재시작하고 새 스레드를 여세요.
-설치 프로그램이 정확히 3개 CMW 생명주기 훅의 신뢰를 기록하므로 `/hooks`에서 따로 승인할 필요는
-필요하지 않습니다. 새 설치 버전의 첫 스레드에서는 로컬 기록으로 추천값을 다시 계산하지만
-자동 적용하지 않습니다.
+설치 프로그램이 CMW의 `SessionStart` 훅을 신뢰하도록 기록하므로 `/hooks`에서 따로 승인할
+필요가 없습니다. 새 설치 버전의 첫 스레드에서는 로컬 기록으로 추천값을 다시 계산하고
+Discord 알림 연결을 한 번 제안하지만, 둘 다 사용자가 동의하기 전에는 적용하지 않습니다.
 
 심사자는 새 스레드에서 다음 읽기 전용 확인을 실행할 수 있습니다.
 
@@ -61,17 +78,18 @@ The expected final reply is `WORK_ON_VERIFIED`; verified completion also disable
 
 ### 지원 Codex 버전과 설치 경로
 
-설치 프로그램은 소스 코드로 검증해 고정한 다음 세 Codex 버전만 허용합니다.
+설치 프로그램은 소스 코드로 검증해 고정한 다음 네 Codex 버전만 허용합니다.
 
 - `0.144.0-alpha.4`
 - `0.144.0`
 - `0.145.0-alpha.18`
+- `0.146.0-alpha.3.1`
 
 설치가 성공하면 다음 소유 경로만 사용합니다.
 
 - 플러그인: `codex-must-work@codex-must-work-local`
 - 마켓플레이스 설정: `[marketplaces.codex-must-work-local]`
-- 버전 캐시: `<CODEX_HOME>/plugins/cache/codex-must-work-local/codex-must-work/0.2.0+codex.20260722000000`
+- 버전 캐시: `<CODEX_HOME>/plugins/cache/codex-must-work-local/codex-must-work/0.2.0+codex.20260727174207`
 - 작업 데이터: `<CODEX_HOME>/plugins/data/codex-must-work-codex-must-work-local`
 - Codex 설정: `<CODEX_HOME>/config.toml`
 
@@ -92,7 +110,7 @@ The expected final reply is `WORK_ON_VERIFIED`; verified completion also disable
 
 | 진단 | 의미 |
 | --- | --- |
-| `unsupported_codex_hook_contract: CMW must be updated for this Codex version` | 설치된 Codex 버전이 고정된 세 버전 밖입니다. |
+| `unsupported_codex_hook_contract: CMW must be updated for this Codex version` | 설치된 Codex 버전이 고정된 네 버전 밖입니다. |
 | `unsupported_codex_marketplace_root` | 해당 Codex가 저장소 루트의 `./` 플러그인을 정확히 읽지 못했습니다. |
 | `codex_hooks_disabled` | 유효 설정에서 Codex 훅 기능이 꺼져 있습니다. |
 | `codex_plugins_disabled` | 유효 설정에서 플러그인 기능이 꺼져 있습니다. |
@@ -129,7 +147,9 @@ $work-on
 - 재개 메시지: `cleanup`
 - 안전한 자동 재시작: 켜기
 
-native Goal은 선택 사항입니다. Goal이 없어도 자동 재시작은 그대로 켜집니다.
+native Goal companion은 현재 안전한 원자적 변경을 보장할 수 없어
+`goal_companion_atomic_update_unavailable`로 거부됩니다. Goal을 만들거나 변경하지 않는
+Goal-less 자동 재시작은 그대로 켜집니다.
 
 - CMW가 정체된 정확한 턴을 중단한 경우: 같은 작업을 한 번 다시 시작
 - 성공 조건을 확인한 경우: Final 직전에 `$work-off --completed`를 호출
@@ -197,10 +217,38 @@ Must Work는 다음과 같은 실제 이벤트가 마지막으로 관찰된 시�
 | `cleanup` | 작업 소유의 남은 런타임을 안전하게 정리한 뒤 계속하라고 지시합니다. |
 | 자동 재시작 끄기 | 감시와 로컬 진단만 사용하고 turn을 중단하지 않습니다. |
 | `--observe-only` | 재개 메시지와 자동 재시작을 모두 사용하지 않는 진단 전용 모드입니다. |
-| Goal companion | 기존 Goal을 별도 작업으로 복제하지 않고 일시정지·재개 상태와 함께 관리합니다. |
+| Goal companion | 현재 안전한 원자적 변경을 보장할 수 없어 명시적으로 거부됩니다. |
 
-자동 재시작은 승인 없이 실행 가능한 Codex 권한 모드와 검증된 resident manager가 필요합니다.
+자동 재시작은 승인 없이 실행 가능한 Codex 권한 모드와 검증된 resident daemon이 필요합니다.
 조건이 맞지 않으면 이유를 그대로 알리고 안전하게 활성화를 거부합니다.
+
+## Discord 웹훅 알림
+
+Discord Remote 없이도 병목 의심, 진행 회복, 정상 완료를 Discord 채널로 보낼 수 있습니다.
+설치 후 첫 스레드에서 Codex가 Discord 알림 연결을 제안하면 `연결`이라고 답하세요. Codex가
+`127.0.0.1`로 시작하는 5분짜리 로컬 설정 링크를 하나 보여줍니다. 그 링크를 Chrome에서 열고
+Discord 채널 설정에서 복사한 웹훅 주소를 붙여넣은 뒤 `연결 테스트 및 저장`을 누르면 됩니다.
+첫 제안을 넘겼어도 나중에 Codex에 `CMW Discord 알림 연결해줘`라고 요청할 수 있습니다.
+
+웹훅 주소는 비밀번호처럼 취급합니다. 설정 페이지는 CMW의 기존 Python daemon 안에서 잠깐만
+열리고, 브라우저와 이 PC 안에서만 통신합니다. 주소는 Codex 대화, MCP 도구 인자와 결과,
+저장소의 `.env`, `config.toml`, `.mcp.json`에 들어가지 않습니다. 연결 테스트가 성공하면
+사용자 전용 플러그인 데이터 폴더에 저장하고 임시 설정 서버를 닫습니다. daemon을 다시
+시작할 필요 없이 다음 상태 변화부터 새 설정을 사용합니다.
+
+알림에는 로컬 Codex DB에서 읽기 전용으로 조회한 스레드 제목, 상태와 병목 주체만 포함됩니다.
+주체는 `메인 에이전트`, `전체 작업` 또는 `Tesla (explorer)`처럼 이름과 역할이 확인된
+서브에이전트로 표시합니다. 구버전 기록처럼 이름이 없으면 원본 ID 대신 같은 에이전트를
+구분할 수 있는 짧은 해시만 표시합니다. 프롬프트, 답변, 도구 입출력은 전송하지 않으며
+Discord 멘션도 비활성화합니다. 제목을 읽지 못하면 조용히 다른 제목을 지어내지 않고
+`제목 조회 실패`라고 표시합니다.
+전송 실패는 `discord_notification_failed` 진단으로 남기고 CMW의 로컬 감시는 계속합니다.
+
+웹훅을 설정하지 않으면 Discord 네트워크 호출, 추가 스레드, 추가 프로세스가 전혀 생기지
+않습니다. 로컬 설정 스레드도 설정 링크가 살아 있는 동안만 하나 생깁니다. 설정한 경우에도
+Discord HTTP 요청은 세 상태가 실제로 바뀔 때만 실행됩니다. 자동 재시작을 끈
+`observe-only` 모드에서는 별도 app-server를 만들지 않고 같은 daemon이 rollout 진행만
+관찰합니다.
 
 ## Discord Remote와 함께 사용할 때
 
@@ -212,7 +260,9 @@ Must Work는 다음과 같은 실제 이벤트가 마지막으로 관찰된 시�
 ## 포터블 Python
 
 시스템 Python이나 첫 실행 다운로드가 필요하지 않습니다. 다음 세 CPython 3.12.13 런타임을
-플러그인에 압축 상태로 포함하며, 해당 운영체제의 런타임만 `PLUGIN_DATA`에 한 번 풉니다.
+플러그인에 압축 상태로 포함하며, 설치할 때 해당 운영체제의 런타임만 `PLUGIN_DATA`에 한 번
+풉니다. Codex는 준비된 `portable-python-3.12.13+20260510/python`으로 MCP/daemon을 직접 시작하므로
+PowerShell이나 `sh` 프로세스가 daemon의 부모로 계속 남지 않습니다.
 
 - Windows x64
 - Linux x64
@@ -223,10 +273,26 @@ Must Work는 다음과 같은 실제 이벤트가 마지막으로 관찰된 시�
 
 ## 설치 후 확인
 
-설치 프로그램이 선택된 캐시의 정확한 3개 생명주기 훅 신뢰를 기록하므로 별도 신뢰 승인 단계가
-필요하지 않습니다. 설치나 업데이트 후 애플리케이션을 재시작하고 새 스레드를 열어야
-`SessionStart` 감시와 설치 버전별 추천이 적용됩니다. 설치 프로그램이 신뢰를 확립하지
-못하면 우회하지 않고 오류 코드와 함께 중단합니다.
+설치 프로그램이 선택된 캐시의 정확한 `SessionStart` 훅을 신뢰하도록 기록하므로 별도
+신뢰 승인 단계가 필요하지 않습니다. 설치나 업데이트 후 애플리케이션을 재시작하고 새 스레드를
+열어야 MCP 도구, locator 주입, 설치 버전별 추천이 적용됩니다. `UserPromptSubmit` 훅은 사용하지
+않으며 `Stop` 훅도 사용하지 않습니다. 설치 프로그램이 신뢰를 확립하지 못하면 우회하지 않고
+오류 코드와 함께 중단합니다.
+
+## 리소스 구조
+
+- Codex 실행당 CMW Python MCP/daemon: 1개
+- CMW 작업이 없을 때 별도 app-server·watcher·manager: 0개
+- 도구 이벤트의 CMW PowerShell 실행: 0회
+- 일반 사용자 턴의 CMW PowerShell 실행: 0회
+- 새 스레드의 locator·추천 주입용 `SessionStart` 실행: 1회
+- Discord 설정 중 임시 loopback 서버: 기존 daemon 안의 스레드 1개, 성공 또는 5분 뒤 0개
+- 자동 재시작 작업의 app-server 연결: daemon이 하나를 공유하고 마지막 작업 종료 후 닫음
+- `observe-only` 작업의 별도 app-server·Node 프로세스: 0개
+- 진행 확인: app-server 이벤트 우선, rollout은 활성화 fence·복구·소유권 검증 때만 증분 확인
+
+Codex나 PC가 종료되면 daemon도 종료됩니다. PC에 상시 실행되는 Windows 서비스를 만들지
+않습니다. Codex를 다시 실행하면 새 daemon이 저장 상태를 읽고 신원이 확인되는 작업만 복구합니다.
 
 ## 개발 검증
 

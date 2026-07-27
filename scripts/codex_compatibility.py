@@ -7,7 +7,7 @@ import re
 import subprocess
 from typing import TYPE_CHECKING, Final, Never
 
-from scripts.codex_compatibility_policy import inspect_managed_policy
+from scripts.codex_compatibility_policy import PolicySnapshot, inspect_managed_policy
 from scripts.codex_compatibility_types import (
     CompatibilityResult,
     FileSnapshot,
@@ -25,9 +25,18 @@ ALLOWED_CODEX_RELEASES: Final = {
     "0.144.0-alpha.4": "049586f41571e74b44c841868bca3a2233214a71",
     "0.144.0": "767822446c7a594caa19609ca435281a9ec67e0d",
     "0.145.0-alpha.18": "f84f9a6406cc55b210395f71b4c6aed236fc7ebb",
+    "0.146.0-alpha.3.1": "ff75c5b939c477c49eb1bd5248da6dab71b109d1",
 }
 _TIMEOUT_SECONDS: Final = 10.0
 _RUN_COMMAND = subprocess.run
+
+type _StableResult = tuple[
+    tuple[FileSnapshot, ...],
+    tuple[tuple[Path, str, bool], ...],
+    tuple[PolicySnapshot, ...],
+    tuple[MarketplaceSnapshot, ...],
+    Path,
+]
 
 __all__ = [
     "ALLOWED_CODEX_RELEASES",
@@ -106,7 +115,7 @@ def _features(runtime: Path, env: dict[str, str]) -> tuple[bool, bool]:
     return rows["hooks"][0], rows["plugins"][0]
 
 
-def _stable(result: CompatibilityResult) -> tuple[object, ...]:
+def _stable(result: CompatibilityResult) -> _StableResult:
     runtimes = tuple((item.path, item.version, item.hooks_enabled) for item in result.runtimes)
     return result.files, runtimes, result.policies, result.marketplaces, result.selected_executable
 

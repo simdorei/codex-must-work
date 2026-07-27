@@ -11,7 +11,12 @@ from scripts.manager_restart_guard import (
     clear_restart_request,
     restart_request_is_fresh,
 )
-from scripts.manager_runtime import ManagerRuntime, record_restart_performed, record_turn_finished
+from scripts.manager_runtime import (
+    ManagerRuntime,
+    clear_pending_turn,
+    record_restart_performed,
+    record_turn_finished,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -36,6 +41,7 @@ class InterruptController:
         """Bind restart state and exact-turn control to one owner connection."""
         self._root = root
         self._client = client
+        self._accepted_interrupt_claims: set[tuple[str, str]] = set()
 
     def execute(
         self,
@@ -63,6 +69,28 @@ class InterruptController:
         if not self._client.wait_turn_completed(turn_id):
             return InterruptResult(failure_reason="interrupt_timeout")
         return self._finish_interrupt(runtime, turn_id)
+
+    def expire_pending(self, runtime: ManagerRuntime, turn_id: str) -> None:
+        """Claim one expired accepted turn and interrupt that exact id once."""
+        if not clear_pending_turn(self._root, runtime.runtime_file, turn_id):
+            return
+        _ = self._client.request(
+            "turn/interrupt",
+            {"threadId": runtime.session_id, "turnId": turn_id},
+            timeout_seconds=10.0,
+        )
+
+    def interrupt_unowned_accepted(self, runtime: ManagerRuntime, turn_id: str) -> None:
+        """Interrupt an accepted turn exactly once when persistence did not own it."""
+        claim = (runtime.session_id, turn_id)
+        if claim in self._accepted_interrupt_claims:
+            return
+        self._accepted_interrupt_claims.add(claim)
+        _ = self._client.request(
+            "turn/interrupt",
+            {"threadId": runtime.session_id, "turnId": turn_id},
+            timeout_seconds=10.0,
+        )
 
     def _finish_interrupt(
         self,

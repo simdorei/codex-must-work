@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from enum import StrEnum, unique
-from typing import TYPE_CHECKING, Protocol, override
+from typing import TYPE_CHECKING, Protocol
+
+from scripts.goal_policy import GoalControlError, enforce_goal_companion_policy
 
 if TYPE_CHECKING:
     from scripts.state_io import JsonValue
 
 type JsonObject = dict[str, JsonValue]
+
+__all__ = ("GoalControlError",)
 
 
 class GoalClient(Protocol):
@@ -39,17 +44,6 @@ class GoalStatus(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class GoalControlError(RuntimeError):
-    """Report a missing or malformed Goal control response."""
-
-    reason_code: str
-
-    @override
-    def __str__(self) -> str:
-        return self.reason_code
-
-
-@dataclass(frozen=True, slots=True)
 class GoalIdentity:
     """Immutable fields used to reject a replacement Goal."""
 
@@ -60,11 +54,32 @@ class GoalIdentity:
 
 
 @dataclass(frozen=True, slots=True)
+class GoalIdentityFingerprint:
+    """Privacy-safe persisted identity for rejecting a replacement Goal."""
+
+    thread_id: str
+    created_at: int
+    objective_sha256: str
+    token_budget: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class GoalSnapshot:
     """Validated Goal identity and current mutable status."""
 
     identity: GoalIdentity
     status: GoalStatus
+
+
+def fingerprint_goal_identity(identity: GoalIdentity) -> GoalIdentityFingerprint:
+    """Hash the private objective while retaining immutable Goal identity fields."""
+    objective_sha256 = hashlib.sha256(identity.objective.encode("utf-8")).hexdigest()
+    return GoalIdentityFingerprint(
+        thread_id=identity.thread_id,
+        created_at=identity.created_at,
+        objective_sha256=objective_sha256,
+        token_budget=identity.token_budget,
+    )
 
 
 def read_goal(client: GoalClient, thread_id: str) -> GoalSnapshot:
@@ -84,6 +99,7 @@ def set_goal_status(
     status: GoalStatus,
 ) -> GoalSnapshot:
     """Set one Goal status and return the response identity for caller validation."""
+    enforce_goal_companion_policy(requested=True)
     result = client.request(
         "thread/goal/set",
         {"threadId": thread_id, "status": status.value},

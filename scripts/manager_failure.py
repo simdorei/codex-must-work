@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
-from typing import Final
+import hashlib
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Final
 
-from scripts.manager_runtime_values import fail
+from scripts.diagnostics import DiagnosticCode, DiagnosticEvent, MonitorState, append_diagnostic
+from scripts.manager_runtime_values import bump_revision, fail, string_value
+from scripts.state import mutate_existing_state
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from scripts.state_io import JsonValue
 
 _ALLOWED: Final = frozenset(
     {
+        "activation_turn_aborted",
+        "activation_turn_superseded",
         "active_turn_mismatch",
         "app_server_failed",
         "goal_not_resumable",
@@ -29,6 +40,7 @@ _ALLOWED: Final = frozenset(
         "goal_blocked",
         "goal_usage_limited",
         "goal_budget_limited",
+        "goal_companion_atomic_update_unavailable",
         "restart_turn_not_owned",
         "server_request_unhandled",
         "start_timeout",
@@ -52,3 +64,28 @@ def validate_manager_failure(reason_code: str) -> None:
     """Reject arbitrary error text before it reaches persisted diagnostics."""
     if reason_code not in _ALLOWED:
         fail("manager_failure_reason_invalid")
+
+
+def record_manager_failure(root: Path, path: Path, reason_code: str) -> None:
+    """Persist a fixed public-safe failure and clear resident manager readiness."""
+    validate_manager_failure(reason_code)
+
+    def update(values: dict[str, JsonValue]) -> str:
+        values["manager_ready"] = False
+        values["manager_pid"] = None
+        values["manager_error"] = reason_code
+        session_id = string_value(values, "session_id", path)
+        bump_revision(values, path)
+        return session_id
+
+    session_id = mutate_existing_state(root, path, update)
+    if session_id is not None:
+        append_diagnostic(
+            root,
+            DiagnosticEvent(
+                occurred_at=datetime.now(UTC),
+                code=DiagnosticCode.MANAGER_FAILED,
+                state=MonitorState.FAILED_CLOSED,
+                session_hash=hashlib.sha256(session_id.encode()).hexdigest(),
+            ),
+        )

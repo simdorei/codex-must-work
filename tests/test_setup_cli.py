@@ -24,12 +24,13 @@ def test_cli_manual_disable_requests_owned_turn_interrupt(
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
     _ = enable_session(
         root,
-        request(root, observe_only=False, goal_companion=True),
+        request(root, observe_only=False),
         managed_report(),
     )
     path = runtime_path(root, SESSION_ID)
     document = load_state(root, path)
     values = dict(document.values)
+    values["goal_companion"] = True
     values["managed_turn_id"] = "turn-owned"
     values["manager_ready"] = True
     save_state(root, path, StateDocument(values=values))
@@ -141,11 +142,11 @@ def test_cli_auto_restart_launches_managed_owner_only_with_safe_permission_mode(
     )
 
     root = codex_home / "codex-must-work"
-    runtime = load_state(root, runtime_path(root, SESSION_ID)).values
-    assert exit_code == 0
-    assert runtime["managed_mode"] is True
-    assert launched == [runtime_path(root, SESSION_ID)]
-    assert "stop_continuation=False, restart=True" in capsys.readouterr().out
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert not root.exists()
+    assert launched == []
+    assert captured.err.strip() == "goal_companion_atomic_update_unavailable"
 
 
 def test_cli_auto_restart_rejects_permission_mode_that_can_prompt(

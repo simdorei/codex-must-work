@@ -6,7 +6,7 @@ import os
 import stat
 import tomllib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final, Never
+from typing import TYPE_CHECKING, Final, Never, Protocol
 
 from scripts.cache_semver import higher
 from tests.real_install_smoke_ledger import SmokeError, TrustEntry
@@ -22,6 +22,14 @@ type TomlTable = dict[str, TomlValue]
 _LAZY_NAME: Final = "lazy-eng-study-codex"
 _CMW_PLUGIN: Final = "codex-must-work@codex-must-work-local"
 _HOOK_PATH: Final = "hooks/hooks.json"
+
+
+class _JsonLoader(Protocol):
+    def __call__(self, s: bytes | str) -> JsonValue: ...
+
+
+def _load_json(loader: _JsonLoader, data: bytes | str) -> JsonValue:
+    return loader(data)
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,11 +62,14 @@ def inspect_home(
     settings = home / "plugins" / "data" / lazy_plugin.replace("@", "-")
     settings /= "lazy-eng-study-codex-settings.json"
     try:
-        raw_settings = json.loads(_read_direct(settings, "lazy_settings_missing"))
+        raw_settings = _json_object(
+            _read_direct(settings, "lazy_settings_missing"),
+            "lazy_settings_invalid",
+        )
     except (UnicodeError, json.JSONDecodeError) as error:
         reason = "lazy_settings_invalid"
         raise SmokeError(reason) from error
-    if not isinstance(raw_settings, dict) or raw_settings.get("enabled") is not True:
+    if raw_settings.get("enabled") is not True:
         _fail("lazy_settings_not_enabled")
     sources = _prompt_sources(home, source_root, plugins, managed_sources)
     return HomePreflight(
@@ -196,7 +207,7 @@ def _read_direct(path: Path, reason: str) -> bytes:
 
 def _json_object(data: bytes, reason: str) -> JsonObject:
     try:
-        value = json.loads(data)
+        value = _load_json(json.loads, data)
     except (UnicodeError, json.JSONDecodeError) as error:
         raise SmokeError(reason) from error
     if not isinstance(value, dict):

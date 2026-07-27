@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Never
 from scripts import cache_publication
 from scripts.cache_package import expected_directories as _expected_directories
 from scripts.cache_package import load_package
-from scripts.cache_publication import check_selection as _check_selection
 from scripts.cache_publication import flush_path as _flush_path
 from scripts.cache_publication import remove_tree as _remove_tree
 from scripts.cache_publication import rename_no_replace as _rename_no_replace
@@ -16,6 +15,7 @@ from scripts.cache_security import read_source, require_directory, secure_identi
 from scripts.cache_security import validate_tree as _security_validate_tree
 from scripts.cache_security import write_package as _security_write_package
 from scripts.cache_semver import safe_name as _safe_name
+from scripts.cache_semver import version_key as _version_key
 from scripts.cache_types import CachePublication
 from scripts.cache_types import identity as _identity
 from scripts.install_errors import InstallPluginError
@@ -34,18 +34,17 @@ def publish_cache(source_root: Path, codex_home: Path, version: str) -> CachePub
     """Stage, verify, and atomically publish one immutable cache."""
     _require_directory(source_root, "package_source_unsafe")
     _require_directory(codex_home, "cache_path_invalid")
-    if version == "local" or not _safe_name(version):
+    if version == "local" or not _safe_name(version) or _version_key(version) is None:
         _fail("package_version_invalid")
     package = _package(source_root)
     stage_root, versions = _roots(codex_home)
     target = versions / version
-    _check_selection(versions, version)
     existing = _existing_publication(target, package)
     if existing is not None:
         return existing
     staged = _create_stage(stage_root)
     try:
-        return _publish_new(staged, target, versions, version, package)
+        return _publish_new(staged, target, versions, package)
     except (InstallPluginError, OSError) as error:
         _rollback(staged[0], target, staged[1], error)
 
@@ -56,7 +55,7 @@ def _existing_publication(target: Path, package: _Package) -> CachePublication |
     try:
         final_identity = _validate_tree(target, package)
     except InstallPluginError:
-        _fail("cache_same_version_mismatch")
+        _fail("installed_generation_conflict")
     return CachePublication(target, package.digest, created_by_run=False, identity=final_identity)
 
 
@@ -83,7 +82,6 @@ def _publish_new(
     staged: tuple[Path, CacheIdentity],
     target: Path,
     versions: Path,
-    version: str,
     package: _Package,
 ) -> CachePublication:
     stage, stage_identity = staged
@@ -100,7 +98,6 @@ def _publish_new(
     final = _validate_tree(target, package)
     if final != stage_identity:
         _fail("cache_security_invalid")
-    _check_selection(versions, version)
     _flush_path(versions)
     final = _validate_tree(target, package)
     if final != stage_identity or secure_identity(versions) != parent_identity:

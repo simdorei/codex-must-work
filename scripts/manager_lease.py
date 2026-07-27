@@ -8,7 +8,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from scripts.manager_runtime_values import runtime_file
-from scripts.state import CorruptReason, CorruptStateError, StateError, StateLockTimeoutError
+from scripts.state import (
+    CorruptReason,
+    CorruptStateError,
+    StateError,
+    StateLockTimeoutError,
+    mutate_existing_state,
+)
 from scripts.state_io import (
     ExclusiveWriteLock,
     UnsafeStatePathError,
@@ -21,6 +27,8 @@ from scripts.state_text import read_private_text, write_private_text
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from scripts.state_io import JsonValue
+
 
 @dataclass(frozen=True, slots=True)
 class ManagerLease:
@@ -28,6 +36,23 @@ class ManagerLease:
 
     path: Path
     lock: ExclusiveWriteLock
+
+
+@dataclass(frozen=True, slots=True)
+class RecoveryLeaseIdentity:
+    """Identify the exact persisted activation generation eligible for recovery."""
+
+    generation: int
+    session_id: str
+    transcript_path: str
+
+
+@dataclass(frozen=True, slots=True)
+class RecoveryManagerLease:
+    """Carry the winning OS lease and its newly claimed activation generation."""
+
+    lease: ManagerLease
+    generation: int
 
 
 def acquire_manager_lease(root: Path, runtime_name: str) -> ManagerLease | None:
@@ -46,6 +71,41 @@ def acquire_manager_lease(root: Path, runtime_name: str) -> ManagerLease | None:
         lock.__exit__(None, None, None)
         raise
     return ManagerLease(path, lock)
+
+
+def acquire_recovery_manager_lease(
+    root: Path,
+    runtime_name: str,
+    expected: RecoveryLeaseIdentity,
+) -> RecoveryManagerLease | None:
+    """Claim one unchanged activation only after acquiring its manager lease."""
+    path = runtime_file(root, runtime_name)
+    lease = acquire_manager_lease(root, runtime_name)
+    if lease is None:
+        return None
+    claimed = False
+    try:
+
+        def update(values: dict[str, JsonValue]) -> bool:
+            generation = values.get("revision")
+            if (
+                type(generation) is not int
+                or generation != expected.generation
+                or values.get("session_id") != expected.session_id
+                or values.get("transcript_path") != expected.transcript_path
+            ):
+                return False
+            values["revision"] = generation + 1
+            return True
+
+        result = mutate_existing_state(root, path, update)
+        if result is not True:
+            return None
+        claimed = True
+        return RecoveryManagerLease(lease, expected.generation + 1)
+    finally:
+        if not claimed:
+            release_manager_lease(lease)
 
 
 def manager_lease_owner(root: Path, runtime_name: str) -> int | None:

@@ -13,34 +13,31 @@ TREE: Final = "2" * 40
 _CMW: Final = "codex-must-work@codex-must-work-local"
 _LAZY: Final = "lazy-eng-study-codex@lazy-local"
 _PREFIX: Final = f"{_CMW}:hooks/hooks.json:"
+type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
+type JsonObject = dict[str, JsonValue]
 
 
 def _completed(
     event: str,
     source: Path,
     turn: str,
-    entries: list[dict[str, str]],
+    entries: list[JsonValue],
     scope: str = "turn",
-) -> dict[str, object]:
-    return {
-        "type": "event_msg",
-        "payload": {
-            "type": "hook_completed",
-            "turn_id": turn,
-            "run": {
-                "id": f"{event}-handler",
-                "event_name": event,
-                "scope": scope,
-                "source": "plugin",
-                "source_path": str(source),
-                "status": "completed",
-                "entries": entries,
-            },
-        },
+) -> JsonObject:
+    run: JsonObject = {
+        "id": f"{event}-handler",
+        "event_name": event,
+        "scope": scope,
+        "source": "plugin",
+        "source_path": str(source),
+        "status": "completed",
+        "entries": entries,
     }
+    payload: JsonObject = {"type": "hook_completed", "turn_id": turn, "run": run}
+    return {"type": "event_msg", "payload": payload}
 
 
-def rollout_records(tmp_path: Path) -> tuple[Path, list[dict[str, object]], list[str]]:
+def rollout_records(tmp_path: Path) -> tuple[Path, list[JsonObject], list[str]]:
     rollout = (tmp_path / "rollout.jsonl").resolve()
     cmw = (tmp_path / "cmw" / "hooks" / "hooks.json").resolve()
     lazy = (tmp_path / "lazy" / "hooks" / "hooks.json").resolve()
@@ -57,7 +54,7 @@ def rollout_records(tmp_path: Path) -> tuple[Path, list[dict[str, object]], list
         "Treat the rewritten English prompt as the primary user request.\n"
         "Assistant-understood request: translated body"
     )
-    records: list[dict[str, object]] = [
+    records: list[JsonObject] = [
         {"type": "session_meta", "payload": {"id": session}},
         {"type": "event_msg", "payload": {"type": "task_started", "turn_id": "turn-first"}},
         _completed(
@@ -104,8 +101,12 @@ def config(cache: Path, *, plugins: bool, cmw: bool) -> bytes:
         f'\r\n[plugins."{_CMW}"]\r\nenabled = true\r\n'
     )
     text += "".join(
-        f'\r\n[hooks.state."{_PREFIX}{event}:0:0"]\r\nenabled = true\r\n'
-        f'trusted_hash = "sha256:{index:064x}"\r\n'
+        "".join(
+            (
+                f'\r\n[hooks.state."{_PREFIX}{event}:0:0"]\r\nenabled = true\r\n',
+                f'trusted_hash = "sha256:{index:064x}"\r\n',
+            )
+        )
         for index, event in enumerate(ledger.CMW_EVENTS)
     )
     return text.encode()

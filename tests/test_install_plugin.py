@@ -7,15 +7,14 @@ import pytest
 
 from scripts import cache_publication, install_plugin, installer_observation
 from scripts.cache_types import CacheIdentity, CachePublication
-from scripts.codex_compatibility import CompatibilityResult
 from scripts.codex_config import update_codex_config as real_update_codex_config
 from scripts.hook_trust import read_plugin_manifest
 from scripts.install_errors import InstallPluginError
 from scripts.install_plugin import install
-from scripts.installer_observation import ConfigObservation
 from scripts.installer_result import InstallResult
 from tests.install_plugin_support import (
     HOOKS_DISABLED,
+    InstallerCallValue,
     compatibility_fixture,
     publication_fixture,
     publisher,
@@ -24,8 +23,10 @@ from tests.install_plugin_support import (
 )
 
 if TYPE_CHECKING:
+    from scripts.codex_compatibility import CompatibilityResult
     from scripts.codex_config import ConfigMutation
     from scripts.installer_lock import InstallerLease
+    from scripts.installer_observation import ConfigObservation
 
 pytest_plugins = ("tests.install_plugin_fixtures",)
 
@@ -39,16 +40,17 @@ def test_initial_install_orders_disabled_before_cache_and_two_revalidations(
     events: list[str] = []
     compatibility = compatibility_fixture(home)
 
-    def check(*_args: object, **kwargs: object) -> CompatibilityResult:
+    def check(*_args: InstallerCallValue, **kwargs: InstallerCallValue) -> CompatibilityResult:
         events.append(f"compatibility:{kwargs.get('require_plugins')}")
         return compatibility
 
-    def publish(*_args: object, **_kwargs: object) -> CachePublication:
+    def publish(*_args: InstallerCallValue, **_kwargs: InstallerCallValue) -> CachePublication:
         assert not (home / "config.toml").exists()
         events.append("publish_cache")
         return publication_fixture(home)
 
     def validate(publication: CachePublication, source_fixture: Path) -> tuple[CacheIdentity, str]:
+        _ = source_fixture
         config = home / "config.toml"
         enabled: bool | None = None
         if config.exists():
@@ -58,7 +60,7 @@ def test_initial_install_orders_disabled_before_cache_and_two_revalidations(
             )[1].split("\n[", maxsplit=1)[0]
             enabled = "enabled = true\n" in plugin_block
             if enabled is False:
-                assert raw.count('[hooks.state."codex-must-work@codex-must-work-local:') == 3
+                assert raw.count('[hooks.state."codex-must-work@codex-must-work-local:') == 1
         events.append(f"validate_cache:{enabled}")
         return publication.identity, publication.digest
 
@@ -98,7 +100,7 @@ def test_disabled_trust_must_be_exact_before_compatibility_or_enable(
     enabled_mutations: list[bool] = []
     original_observe = installer_observation.observe_config
 
-    def check(*_args: object, **kwargs: object) -> CompatibilityResult:
+    def check(*_args: InstallerCallValue, **kwargs: InstallerCallValue) -> CompatibilityResult:
         nonlocal compatibility_requires_plugins
         if kwargs.get("require_plugins") is True:
             compatibility_requires_plugins += 1
@@ -118,7 +120,7 @@ def test_disabled_trust_must_be_exact_before_compatibility_or_enable(
             observed.plugin_present
             and observed.plugin_disabled
             and observed.source_root is not None
-            and len(observed.trusted_hooks) == 3
+            and len(observed.trusted_hooks) == 1
         ):
             return installer_observation.ConfigObservation(
                 observed.snapshot,
@@ -157,7 +159,7 @@ def test_real_full_tree_corruption_before_enable_never_publishes_enabled(
     corrupted = False
     enabled_mutations: list[bool] = []
 
-    def check(*_args: object, **kwargs: object) -> CompatibilityResult:
+    def check(*_args: InstallerCallValue, **kwargs: InstallerCallValue) -> CompatibilityResult:
         nonlocal corrupted
         if kwargs.get("require_plugins") is True and not corrupted:
             version = read_plugin_manifest(source).version
@@ -203,14 +205,14 @@ def test_pre_enable_or_post_enable_revalidation_failure_disables_and_removes_cac
     publication: CachePublication | None = None
     calls = 0
 
-    def check(*_args: object, **_kwargs: object) -> CompatibilityResult:
+    def check(*_args: InstallerCallValue, **_kwargs: InstallerCallValue) -> CompatibilityResult:
         nonlocal calls
         calls += 1
         if calls == failure_call:
             raise InstallPluginError(HOOKS_DISABLED)
         return compatibility
 
-    def publish(*_args: object, **_kwargs: object) -> CachePublication:
+    def publish(*_args: InstallerCallValue, **_kwargs: InstallerCallValue) -> CachePublication:
         nonlocal publication
         publication = publication_fixture(home)
         return publication
@@ -229,6 +231,8 @@ def test_pre_enable_or_post_enable_revalidation_failure_disables_and_removes_cac
 
     assert not result.install_ok
     assert result.error_code == "codex_plugins_disabled"
+    assert result.primary_error_code == "codex_plugins_disabled"
+    assert result.cleanup_error_code is None
     assert result.final_plugin_disabled is True
     assert result.final_cache_matches_enabled_trust is False
     assert result.created_cache_removed is True
@@ -246,11 +250,11 @@ def test_already_disabled_config_is_byte_identical_until_cache_publication(
     source = source_fixture(tmp_path)
     compatibility = compatibility_fixture(home)
 
-    def publish(*_args: object, **_kwargs: object) -> CachePublication:
+    def publish(*_args: InstallerCallValue, **_kwargs: InstallerCallValue) -> CachePublication:
         assert (home / "config.toml").read_bytes() == original
         return publication_fixture(home)
 
-    def check(*args: object, **kwargs: object) -> CompatibilityResult:
+    def check(*args: InstallerCallValue, **kwargs: InstallerCallValue) -> CompatibilityResult:
         _ = args, kwargs
         return compatibility
 

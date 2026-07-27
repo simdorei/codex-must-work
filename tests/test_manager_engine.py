@@ -51,7 +51,7 @@ def test_manager_owns_handoff_then_interrupts_and_restarts_exact_turn(tmp_path: 
     ]
 
 
-def test_legacy_goal_less_external_interrupt_disables_without_replacement(tmp_path: Path) -> None:
+def test_goal_less_external_interrupt_queues_replacement(tmp_path: Path) -> None:
     root, path = manager_runtime_fixture(tmp_path)
     client = FakeAppServer()
     engine = ManagerEngine(
@@ -67,8 +67,10 @@ def test_legacy_goal_less_external_interrupt_disables_without_replacement(tmp_pa
     client.turn_outcomes["turn-1"] = TurnOutcome.INTERRUPTED
     client.active = None
 
-    assert engine.tick() is False
-    assert not path.exists()
+    assert engine.tick() is True
+    interrupted = load_state(root, path).values
+    assert interrupted["handoff_requested"] is True
+    assert interrupted["managed_turn_id"] is None
     assert client.turn_number == 1
 
 

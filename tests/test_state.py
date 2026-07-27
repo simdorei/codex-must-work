@@ -4,12 +4,14 @@ import hashlib
 import json
 import os
 import stat
+from pathlib import Path
+from threading import Event, Thread, current_thread
 from typing import TYPE_CHECKING
 
 import pytest
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from collections.abc import Mapping
 
 from scripts.state import (
     CorruptReason,
@@ -23,7 +25,7 @@ from scripts.state import (
     runtime_path,
     save_state,
 )
-from scripts.state_io import ExclusiveWriteLock
+from scripts.state_io import ExclusiveWriteLock, JsonValue
 
 
 def test_path_lookup_for_opted_out_session_creates_no_artifacts(tmp_path: Path) -> None:
@@ -71,6 +73,93 @@ def test_atomic_save_leaves_persistent_kernel_lock_without_temporary_file(
     # Then
     assert list(tmp_path.rglob("*.tmp")) == []
     assert list(tmp_path.rglob("*.lock")) == [tmp_path / ".config.json.lock"]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows replacement sharing semantics")
+def test_atomic_save_waits_for_a_concurrent_python_reader(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = config_path(tmp_path)
+    save_state(tmp_path, path, StateDocument(values={"revision": 1}))
+    reader_open = Event()
+    release_reader = Event()
+    replace_denied = Event()
+    read_values: list[Mapping[str, JsonValue]] = []
+    write_errors: list[PermissionError] = []
+    original_read_text = Path.read_text
+    original_replace = Path.replace
+
+    def hold_reader(
+        target: Path,
+        encoding: str | None = None,
+        errors: str | None = None,
+    ) -> str:
+        if current_thread().name != "held-state-reader" or target != path:
+            return original_read_text(target, encoding=encoding, errors=errors)
+        with target.open("r", encoding=encoding, errors=errors) as handle:
+            contents = handle.read()
+            reader_open.set()
+            assert release_reader.wait(1.0)
+            return contents
+
+    def observe_denied_replace(source: Path, target: Path) -> Path:
+        try:
+            return original_replace(source, target)
+        except PermissionError:
+            replace_denied.set()
+            raise
+
+    def read_while_held() -> None:
+        read_values.append(load_state(tmp_path, path).values)
+
+    def save_while_reading() -> None:
+        try:
+            save_state(tmp_path, path, StateDocument(values={"revision": 2}))
+        except PermissionError as error:
+            write_errors.append(error)
+
+    monkeypatch.setattr(Path, "read_text", hold_reader)
+    monkeypatch.setattr(Path, "replace", observe_denied_replace)
+    reader = Thread(target=read_while_held, name="held-state-reader")
+    writer = Thread(target=save_while_reading, name="concurrent-state-writer")
+
+    reader.start()
+    assert reader_open.wait(1.0)
+    writer.start()
+    assert replace_denied.wait(1.0)
+    release_reader.set()
+    reader.join(1.0)
+    writer.join(1.0)
+
+    assert not reader.is_alive()
+    assert not writer.is_alive()
+    assert write_errors == []
+    assert read_values == [{"revision": 1}]
+    assert load_state(tmp_path, path).values == {"revision": 2}
+
+
+def test_atomic_save_surfaces_persistent_permission_denial(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = config_path(tmp_path)
+    save_state(tmp_path, path, StateDocument(values={"revision": 1}))
+    failure = PermissionError("persistent_denial")
+    clock = iter((0.0, 0.0, 2.0))
+
+    def deny_replace(_source: Path, _target: Path) -> Path:
+        raise failure
+
+    monkeypatch.setattr(Path, "replace", deny_replace)
+    monkeypatch.setattr("scripts.state_io.time.monotonic", lambda: next(clock))
+
+    with pytest.raises(PermissionError) as raised:
+        save_state(tmp_path, path, StateDocument(values={"revision": 2}))
+
+    assert raised.value is failure
+    assert load_state(tmp_path, path).values == {"revision": 1}
+    assert list(tmp_path.rglob("*.tmp")) == []
 
 
 def test_corrupt_state_is_an_explicit_error(tmp_path: Path) -> None:

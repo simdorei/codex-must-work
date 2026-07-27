@@ -5,12 +5,24 @@ import json
 import re
 import shutil
 import subprocess
-from typing import TYPE_CHECKING, Final, cast
+from typing import TYPE_CHECKING, Final, Protocol
 
 from tests.commit_contract_paths import RULES, CommitRule
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
+type JsonObject = dict[str, JsonValue]
+
+
+class _JsonLoader(Protocol):
+    def __call__(self, s: str) -> JsonValue: ...
+
+
+def _load_json(loader: _JsonLoader, data: str) -> JsonValue:
+    return loader(data)
+
 
 GIT: Final = shutil.which("git")
 if GIT is None:
@@ -76,7 +88,7 @@ def _check_metadata_hunks(repo: Path, commit: str) -> tuple[str, ...]:
     for document in (old_market, new_market):
         _ = document.pop("name", None)
         _ = document.pop("interface", None)
-        plugins = cast("list[dict[str, object]]", document["plugins"])
+        plugins = _plugin_records(document)
         _ = plugins[0].pop("policy", None)
         _ = plugins[0].pop("category", None)
     if old_market != new_market:
@@ -173,12 +185,24 @@ def _other_nodes(tree: ast.Module) -> tuple[str, ...]:
     )
 
 
-def _json_blob(repo: Path, revision: str, path: str) -> dict[str, object]:
-    value = cast("object", json.loads(_blob(repo, revision, path)))
+def _json_blob(repo: Path, revision: str, path: str) -> JsonObject:
+    value = _load_json(json.loads, _blob(repo, revision, path))
     if not isinstance(value, dict):
         msg = f"expected JSON object: {path}"
         raise TypeError(msg)
-    return cast("dict[str, object]", value)
+    return value
+
+
+def _plugin_records(document: JsonObject) -> list[JsonObject]:
+    value = document.get("plugins")
+    if (
+        not isinstance(value, list)
+        or not value
+        or not all(isinstance(item, dict) for item in value)
+    ):
+        message = "expected non-empty plugin records"
+        raise TypeError(message)
+    return [item for item in value if isinstance(item, dict)]
 
 
 def _blob(repo: Path, revision: str, path: str) -> str:

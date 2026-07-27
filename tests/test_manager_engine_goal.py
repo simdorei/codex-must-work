@@ -1,9 +1,11 @@
 from pathlib import Path
 
+import pytest
+
 from scripts.app_server_protocol import TurnOutcome
-from scripts.manager_callbacks import ManagerCallbacks
+from scripts.goal_control import GoalControlError
 from scripts.manager_engine import ManagerEngine
-from scripts.state import StateDocument, load_state, runtime_path, save_state
+from scripts.state import StateDocument, runtime_path, save_state
 from scripts.state_io import JsonValue
 from scripts.watcher_source import RolloutCursor, initial_cursor, save_cursor
 from tests.rollout_fixture import write_session_meta
@@ -50,6 +52,9 @@ class FakeGoalAppServer:
 
     def start(self) -> None:
         self.calls.append("initialize")
+
+    def close(self) -> None:
+        return
 
     def request(
         self,
@@ -129,7 +134,11 @@ def accept_fake_goal_turn(_rollout: Path, _cursor: RolloutCursor, _turn_id: str)
     return True
 
 
-def runtime_fixture(tmp_path: Path) -> tuple[Path, Path]:
+def runtime_fixture(
+    tmp_path: Path,
+    *,
+    goal_companion: bool = False,
+) -> tuple[Path, Path]:
     root = tmp_path / "codex-must-work"
     path = runtime_path(root, "thread-1")
     rollout = tmp_path / "sessions" / "rollout.jsonl"
@@ -155,7 +164,7 @@ def runtime_fixture(tmp_path: Path) -> tuple[Path, Path]:
                 "parent_complete": False,
                 "parent": None,
                 "children": {},
-                "goal_companion": True,
+                "goal_companion": goal_companion,
                 "manager_ready": False,
                 "manager_pid": None,
                 "manager_error": None,
@@ -173,86 +182,23 @@ def runtime_fixture(tmp_path: Path) -> tuple[Path, Path]:
     return root, path
 
 
-def test_goal_companion_restarts_exact_turn_through_pause_and_resume(tmp_path: Path) -> None:
-    root, path = runtime_fixture(tmp_path)
+def test_goal_companion_manager_rejects_before_app_server_and_state_mutation(
+    tmp_path: Path,
+) -> None:
+    # Given a persisted Goal companion runtime.
+    root, path = runtime_fixture(tmp_path, goal_companion=True)
+    before = path.read_bytes()
     client = FakeGoalAppServer()
-    engine = ManagerEngine(
-        root,
-        path.name,
-        client,
-        pid=123,
-        callbacks=ManagerCallbacks(
-            watcher_launcher=lambda: None,
-            goal_turn_verifier=accept_fake_goal_turn,
-        ),
-    )
+    engine = ManagerEngine(root, path.name, client, pid=123)
 
-    engine.initialize()
-    assert client.goal_status == "paused"
-    assert engine.tick() is True
-    first = load_state(root, path).values
-    assert first["managed_turn_id"] == "turn-goal-1"
+    # When the manager evaluates recovery.
+    with pytest.raises(
+        GoalControlError,
+        match=r"^goal_companion_atomic_update_unavailable$",
+    ):
+        engine.initialize()
 
-    updated: dict[str, JsonValue] = dict(first)
-    updated["restart_request"] = {
-        "request_id": "request-1",
-        "turn_id": "turn-goal-1",
-        "target_id": None,
-        "target_generation": 1,
-        "progress_epoch": 0,
-    }
-    updated["restart_claimed"] = False
-    save_state(root, path, StateDocument(values=updated))
-
-    assert engine.tick() is True
-    interrupted = load_state(root, path).values
-    assert interrupted["managed_turn_id"] is None
-    assert interrupted["restart_count"] == 1
-    assert client.goal_status == "paused"
-
-    assert engine.tick() is True
-    restarted = load_state(root, path).values
-    assert restarted["managed_turn_id"] == "turn-goal-2"
-    assert client.active == "turn-goal-2"
-    assert client.goal_status == "paused"
-    assert client.calls == [
-        "initialize",
-        "thread/resume",
-        "thread/goal/get",
-        "thread/goal/set",
-        "thread/goal/get",
-        "thread/goal/set",
-        "thread/goal/get",
-        "thread/goal/set",
-        "thread/goal/get",
-        "turn/interrupt",
-        "thread/backgroundTerminals/clean",
-        "thread/goal/get",
-        "thread/goal/set",
-        "thread/goal/get",
-        "thread/goal/set",
-        "turn/steer",
-    ]
-
-
-def test_goal_companion_fails_closed_when_resume_produces_no_turn(tmp_path: Path) -> None:
-    root, path = runtime_fixture(tmp_path)
-    client = FakeGoalAppServer(start_on_resume=False)
-    engine = ManagerEngine(
-        root,
-        path.name,
-        client,
-        pid=123,
-        callbacks=ManagerCallbacks(
-            watcher_launcher=lambda: None,
-            goal_turn_verifier=accept_fake_goal_turn,
-        ),
-    )
-
-    engine.initialize()
-
-    assert engine.tick() is False
-    runtime = load_state(root, path).values
-    assert runtime["manager_error"] == "goal_resume_timeout"
-    assert runtime["manager_ready"] is False
+    # Then no app-server call or persisted mutation occurred.
+    assert client.calls == []
+    assert path.read_bytes() == before
     assert client.goal_status == "active"

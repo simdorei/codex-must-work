@@ -1,39 +1,26 @@
 from __future__ import annotations
 
-import json
 import os
 import subprocess
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
 from scripts import codex_compatibility
-from scripts import codex_compatibility_policy as policy_module
 from scripts.codex_compatibility import (
-    ALLOWED_CODEX_RELEASES,
     validate_codex_compatibility,
-)
-from scripts.codex_compatibility_policy import (
-    MANAGED_SOURCE_KIND_ORDER,
-    MANAGED_SOURCE_KINDS_BY_RELEASE,
-    MANAGED_SOURCE_ORDER,
-    MANAGED_SOURCE_SEARCH_BY_RELEASE,
-    PolicySourceSpec,
 )
 from scripts.install_errors import InstallPluginError
 from tests.codex_compatibility_support import (
-    ALLOWED,
     binary_names,
     bundle_fixture,
-    cloud_cache,
     fake_commands,
-    policy_spec_provider,
     source_fixture,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from pathlib import Path
+
 
 @pytest.mark.parametrize("kind", ["orphan", "directory", "hardlink", "symlink"])
 def test_incomplete_or_unsafe_direct_runtime_fails_before_invocation(
@@ -143,4 +130,3 @@ def test_command_contract_failures_are_exact(
         else "codex_hooks_disabled"
     )
     assert caught.value.reason_code == expected
-

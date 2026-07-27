@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from scripts import cache_publication, install_plugin, installer_observation
 from scripts.cache_types import CacheIdentity, CachePublication
-from scripts.codex_compatibility import CompatibilityResult
-from scripts.hook_trust import TrustedHookState
 from scripts.install_errors import InstallPluginError
 from scripts.install_plugin import install
 from tests.install_plugin_support import (
@@ -21,6 +19,12 @@ from tests.install_plugin_support import (
     unsafe_prior_config,
 )
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from scripts.codex_compatibility import CompatibilityResult
+    from scripts.hook_trust import TrustedHookState
+
 pytest_plugins = ("tests.install_plugin_fixtures",)
 
 
@@ -33,7 +37,14 @@ def test_recovery_never_overwrites_external_writer_when_prior_is_restorable(
     new_source = source_fixture(tmp_path, "2.0.0", "source-new")
     compatibility = compatibility_fixture(home)
 
-    def ok(*_args: object, **_kwargs: object) -> CompatibilityResult:
+    def ok(
+        _codex_home: Path,
+        _source_root: Path,
+        *,
+        require_plugins: bool = False,
+        expected: CompatibilityResult | None = None,
+    ) -> CompatibilityResult:
+        _ = require_plugins, expected
         return compatibility
 
     def snapshot(path: Path) -> tuple[CacheIdentity, str]:
@@ -51,17 +62,24 @@ def test_recovery_never_overwrites_external_writer_when_prior_is_restorable(
     monkeypatch.setattr(install_plugin, "trusted_states", trusted_states)
     monkeypatch.setattr(installer_observation, "snapshot_retained_cache", snapshot)
     monkeypatch.setattr(installer_observation, "retained_cache_matches", retained)
-    monkeypatch.setattr(
-        installer_observation,
-        "trusted_hook_states_for_plugin",
-        lambda path, _marketplace: trusted_states(path),
-    )
+
+    def trusted(path: Path, _marketplace: str) -> tuple[TrustedHookState, ...]:
+        return trusted_states(path)
+
+    monkeypatch.setattr(installer_observation, "trusted_hook_states_for_plugin", trusted)
     assert install(home.resolve(), old_source).install_ok
     config = home / "config.toml"
 
     calls = 0
 
-    def fail_upgrade(*_args: object, **_kwargs: object) -> CompatibilityResult:
+    def fail_upgrade(
+        _codex_home: Path,
+        _source_root: Path,
+        *,
+        require_plugins: bool = False,
+        expected: CompatibilityResult | None = None,
+    ) -> CompatibilityResult:
+        _ = require_plugins, expected
         nonlocal calls
         calls += 1
         if calls == 2:
@@ -100,16 +118,24 @@ def test_malformed_or_unreadable_enabled_prior_cache_is_safely_disabled(
     _ = config.write_bytes(raw)
     compatibility = compatibility_fixture(home)
 
-    def check(*_args: object, **_kwargs: object) -> CompatibilityResult:
+    def check(
+        _codex_home: Path,
+        _source_root: Path,
+        *,
+        require_plugins: bool = False,
+        expected: CompatibilityResult | None = None,
+    ) -> CompatibilityResult:
+        _ = require_plugins, expected
         return compatibility
 
-    def fail_publish(*_args: object, **_kwargs: object) -> CachePublication:
+    def fail_publish(_source_root: Path, _codex_home: Path, _version: str) -> CachePublication:
         raise InstallPluginError(CACHE_PUBLICATION_FAILED)
 
     if failure == "unreadable":
 
-        def unreadable(*_args: object, **_kwargs: object) -> tuple[TrustedHookState, ...]:
-            raise OSError("injected unreadable prior cache")
+        def unreadable(_path: Path, _marketplace: str) -> tuple[TrustedHookState, ...]:
+            message = "injected unreadable prior cache"
+            raise OSError(message)
 
         monkeypatch.setattr(installer_observation, "trusted_hook_states_for_plugin", unreadable)
     monkeypatch.setattr(install_plugin, "validate_codex_compatibility", check)
@@ -131,10 +157,17 @@ def test_valid_reinstall_with_legacy_enabled_runs_transaction_and_disables_legac
     compatibility = compatibility_fixture(home)
     publications = 0
 
-    def check(*_args: object, **_kwargs: object) -> CompatibilityResult:
+    def check(
+        _codex_home: Path,
+        _source_root: Path,
+        *,
+        require_plugins: bool = False,
+        expected: CompatibilityResult | None = None,
+    ) -> CompatibilityResult:
+        _ = require_plugins, expected
         return compatibility
 
-    def publish(*_args: object, **_kwargs: object) -> CachePublication:
+    def publish(_source_root: Path, _codex_home: Path, _version: str) -> CachePublication:
         nonlocal publications
         publications += 1
         created = publication_fixture(home)
@@ -151,16 +184,18 @@ def test_valid_reinstall_with_legacy_enabled_runs_transaction_and_disables_legac
         metadata = path.stat()
         return CacheIdentity(metadata.st_dev, metadata.st_ino), "digest"
 
+    def matches(_path: Path, _identity: CacheIdentity, _digest: str) -> bool:
+        return True
+
+    def trusted(path: Path, _marketplace: str) -> tuple[TrustedHookState, ...]:
+        return trusted_states(path)
+
     monkeypatch.setattr(install_plugin, "validate_codex_compatibility", check)
     monkeypatch.setattr(install_plugin, "publish_cache", publish)
     monkeypatch.setattr(install_plugin, "trusted_states", trusted_states)
     monkeypatch.setattr(installer_observation, "snapshot_retained_cache", snapshot)
-    monkeypatch.setattr(installer_observation, "retained_cache_matches", lambda *_args: True)
-    monkeypatch.setattr(
-        installer_observation,
-        "trusted_hook_states_for_plugin",
-        lambda path, _marketplace: trusted_states(path),
-    )
+    monkeypatch.setattr(installer_observation, "retained_cache_matches", matches)
+    monkeypatch.setattr(installer_observation, "trusted_hook_states_for_plugin", trusted)
     assert install(home.resolve(), source).install_ok
     config = home / "config.toml"
     _ = config.write_bytes(

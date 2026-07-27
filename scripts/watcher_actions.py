@@ -8,13 +8,12 @@ from uuid import uuid4
 from scripts.activity_epoch import turn_activity_epoch
 from scripts.diagnostics import DiagnosticCode
 from scripts.silence import Action, latest_progress_at, rearm_cancelled_restart
-from scripts.watcher_diagnostics import TargetDiagnostic
+from scripts.watcher_diagnostics import TargetDiagnostic, lifecycle_event_id
 
 if TYPE_CHECKING:
-    from datetime import datetime
-
     from scripts.silence import SilenceState
     from scripts.state_io import JsonValue
+    from scripts.watcher_context import TickContext
     from scripts.watcher_models import MonitorTarget, RuntimeTarget
 
 
@@ -29,10 +28,10 @@ def rearm_if_restart_cancelled(
 
 def diagnostic_for_action(
     action: Action,
+    runtime: RuntimeTarget,
     target: MonitorTarget,
     state: SilenceState,
-    now: float,
-    wall_time: datetime,
+    context: TickContext,
 ) -> TargetDiagnostic | None:
     """Create the fixed diagnostic for one actionable detector transition."""
     code = {
@@ -43,10 +42,11 @@ def diagnostic_for_action(
     if code is None:
         return None
     return TargetDiagnostic(
-        occurred_at=wall_time,
+        occurred_at=context.wall_time,
         code=code,
         target=target,
-        elapsed_ms=max(0, int((now - latest_progress_at(state)) * 1000)),
+        elapsed_ms=max(0, int((context.now - latest_progress_at(state)) * 1000)),
+        event_id=lifecycle_event_id(code, runtime, target),
     )
 
 

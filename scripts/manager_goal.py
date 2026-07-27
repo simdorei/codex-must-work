@@ -2,26 +2,59 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, assert_never, final
+from typing import TYPE_CHECKING, Protocol, assert_never, final
 
 from scripts.app_server_protocol import AppServerProtocolError
 from scripts.goal_control import (
     GoalControlError,
     GoalIdentity,
+    GoalIdentityFingerprint,
     GoalSnapshot,
     GoalStatus,
+    fingerprint_goal_identity,
     read_goal,
     set_goal_status,
 )
+from scripts.goal_identity_state import record_goal_identity_fingerprint
+from scripts.goal_policy import enforce_goal_companion_policy
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from scripts.app_server_protocol import ManagedAppServer
+    from scripts.manager_runtime import ManagerRuntime
 
 _NOT_RESUMABLE = "goal_not_resumable"
 _COMPLETE = "goal_complete"
 _IDENTITY_CHANGED = "goal_identity_changed"
 _IDENTITY_MISSING = "goal_identity_missing"
 _HANDOFF_CHANGED = "goal_handoff_changed"
+
+
+class GoalIdentityRecorder(Protocol):
+    """Persist one Goal fingerprint before any Goal mutation."""
+
+    def __call__(self, fingerprint: GoalIdentityFingerprint) -> None:
+        """Record one immutable Goal fingerprint."""
+        ...
+
+
+def persisted_goal_guard(
+    client: ManagedAppServer,
+    root: Path,
+    runtime: ManagerRuntime,
+) -> GoalGuard:
+    """Bind Goal control to the identity durably captured for one runtime."""
+
+    def record(fingerprint: GoalIdentityFingerprint) -> None:
+        record_goal_identity_fingerprint(root, runtime.runtime_file, fingerprint)
+
+    return GoalGuard(
+        client,
+        runtime.session_id,
+        expected_fingerprint=runtime.goal_identity_fingerprint,
+        recorder=record,
+    )
 
 
 def fence_goal_handoff(
@@ -60,16 +93,31 @@ def require_goal_guard(guard: GoalGuard | None) -> GoalGuard:
 class GoalGuard:
     """Restrict one manager to the exact Goal present at initialization."""
 
-    def __init__(self, client: ManagedAppServer, thread_id: str) -> None:
+    def __init__(
+        self,
+        client: ManagedAppServer,
+        thread_id: str,
+        *,
+        expected_fingerprint: GoalIdentityFingerprint | None = None,
+        recorder: GoalIdentityRecorder | None = None,
+    ) -> None:
         """Bind control to one app-server connection and thread."""
         self.client = client
         self.thread_id = thread_id
+        self._expected_fingerprint = expected_fingerprint
+        self._recorder = recorder
         self.identity: GoalIdentity | None = None
         self.restore_active: bool = False
 
     def initialize(self) -> None:
         """Capture the initial identity and pause only an active Goal."""
+        enforce_goal_companion_policy(requested=True)
         goal = read_goal(self.client, self.thread_id)
+        fingerprint = fingerprint_goal_identity(goal.identity)
+        if self._expected_fingerprint is not None and fingerprint != self._expected_fingerprint:
+            raise GoalControlError(_IDENTITY_CHANGED)
+        if self._recorder is not None:
+            self._recorder(fingerprint)
         self.identity = goal.identity
         match goal.status:
             case GoalStatus.ACTIVE:
@@ -86,6 +134,7 @@ class GoalGuard:
 
     def activate_for_handoff(self) -> None:
         """Reactivate only the captured resumable Goal."""
+        enforce_goal_companion_policy(requested=True)
         goal = self._read_bound()
         match goal.status:
             case GoalStatus.PAUSED:
@@ -102,6 +151,7 @@ class GoalGuard:
 
     def pause_for_interrupt(self) -> None:
         """Pause Goal scheduling without interrupting its current turn."""
+        enforce_goal_companion_policy(requested=True)
         goal = self._read_bound()
         match goal.status:
             case GoalStatus.ACTIVE:
@@ -118,6 +168,7 @@ class GoalGuard:
 
     def restore_initial_active(self) -> bool:
         """Undo only the temporary pause made during initialization."""
+        enforce_goal_companion_policy(requested=True)
         if not self.restore_active:
             return False
         goal = self._read_bound()
@@ -128,10 +179,12 @@ class GoalGuard:
 
     def keep_paused_on_exit(self) -> None:
         """Prevent fatal cleanup from opening an unowned continuation window."""
+        enforce_goal_companion_policy(requested=True)
         self.restore_active = False
 
     def status_after_turn(self) -> GoalStatus:
         """Classify the exact bound Goal without mutating its status."""
+        enforce_goal_companion_policy(requested=True)
         return self._read_bound().status
 
     def _read_bound(self) -> GoalSnapshot:

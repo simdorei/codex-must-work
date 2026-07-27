@@ -1,4 +1,5 @@
 """Persist the resident manager's exact turn ownership handshake."""
+# noqa: SIZE_OK  -- one persistence boundary validates and mutates manager runtime state
 
 from __future__ import annotations
 
@@ -8,9 +9,9 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
 
 from scripts.diagnostics import DiagnosticCode, DiagnosticEvent, MonitorState, append_diagnostic
+from scripts.goal_identity_state import parse_goal_identity_fingerprint
 from scripts.hook_state import start_managed_parent
 from scripts.manager_decision import ManagerView
-from scripts.manager_failure import validate_manager_failure
 from scripts.manager_runtime_values import (
     bool_value,
     bump_revision,
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
 
+    from scripts.goal_control import GoalIdentityFingerprint
     from scripts.state_io import JsonValue
 
 
@@ -69,6 +71,9 @@ class ManagerRuntime:
     shutdown_interrupt: bool
     manager_error: str | None
     parent_turn_id: str | None
+    goal_identity_fingerprint: GoalIdentityFingerprint | None
+    pending_turn_id: str | None
+    pending_turn_timed_out_at: float | None
 
 
 def load_manager_runtime(root: Path, runtime_name: str) -> ManagerRuntime | None:
@@ -111,6 +116,13 @@ def load_manager_runtime(root: Path, runtime_name: str) -> ManagerRuntime | None
         shutdown_interrupt=bool_value(values, "shutdown_interrupt", path),
         manager_error=optional_string(values, "manager_error", path),
         parent_turn_id=optional_string(values, "parent_turn_id", path),
+        goal_identity_fingerprint=parse_goal_identity_fingerprint(values, path),
+        pending_turn_id=optional_string(values, "pending_turn_id", path),
+        pending_turn_timed_out_at=_optional_nonnegative_float(
+            values,
+            "pending_turn_timed_out_at",
+            path,
+        ),
     )
 
 
@@ -187,6 +199,11 @@ def record_turn_started(root: Path, path: Path, turn_id: str) -> None:
         require_managed(values, path)
         if values.get("handoff_requested") is not True or values.get("managed_turn_id") is not None:
             fail("handoff_state_changed")
+        pending_turn = values.get("pending_turn_id")
+        if pending_turn is not None and pending_turn != turn_id:
+            fail("handoff_state_changed")
+        values["pending_turn_id"] = None
+        values["pending_turn_timed_out_at"] = None
         values["managed_turn_id"] = turn_id
         values["handoff_requested"] = False
         values["restart_request"] = None
@@ -196,6 +213,60 @@ def record_turn_started(root: Path, path: Path, turn_id: str) -> None:
         bump_revision(values, path)
 
     _ = mutate_existing_state(root, path, update)
+
+
+def record_pending_turn(root: Path, path: Path, turn_id: str) -> None:
+    """Persist an accepted start response before waiting for its notification."""
+    if not turn_id:
+        fail("managed_turn_id_missing")
+
+    def update(values: dict[str, JsonValue]) -> None:
+        require_managed(values, path)
+        if (
+            values.get("handoff_requested") is not True
+            or values.get("managed_turn_id") is not None
+            or values.get("pending_turn_id") is not None
+        ):
+            fail("handoff_state_changed")
+        values["pending_turn_id"] = turn_id
+        values["pending_turn_timed_out_at"] = None
+        bump_revision(values, path)
+
+    _ = mutate_existing_state(root, path, update)
+
+
+def mark_pending_turn_timed_out(
+    root: Path,
+    path: Path,
+    turn_id: str,
+    timed_out_at: float,
+) -> None:
+    """Start the reconciliation grace for one exact accepted turn."""
+    if timed_out_at < 0:
+        fail("handoff_state_changed")
+
+    def update(values: dict[str, JsonValue]) -> None:
+        require_managed(values, path)
+        if values.get("pending_turn_id") != turn_id:
+            fail("handoff_state_changed")
+        values["pending_turn_timed_out_at"] = timed_out_at
+        bump_revision(values, path)
+
+    _ = mutate_existing_state(root, path, update)
+
+
+def clear_pending_turn(root: Path, path: Path, turn_id: str) -> bool:
+    """Atomically claim and clear one exact pending turn."""
+
+    def update(values: dict[str, JsonValue]) -> bool:
+        if values.get("pending_turn_id") != turn_id:
+            return False
+        values["pending_turn_id"] = None
+        values["pending_turn_timed_out_at"] = None
+        bump_revision(values, path)
+        return True
+
+    return mutate_existing_state(root, path, update) is True
 
 
 def record_turn_finished(root: Path, path: Path, turn_id: str) -> None:
@@ -251,31 +322,9 @@ def record_restart_performed(
         )
 
 
-def record_manager_failure(root: Path, path: Path, reason_code: str) -> None:
-    """Fail closed with a fixed public-safe reason code."""
-    validate_manager_failure(reason_code)
-
-    def update(values: dict[str, JsonValue]) -> str:
-        values["manager_ready"] = False
-        values["manager_error"] = reason_code
-        session_id = string_value(values, "session_id", path)
-        bump_revision(values, path)
-        return session_id
-
-    session_id = mutate_existing_state(root, path, update)
-    if session_id is not None:
-        append_diagnostic(
-            root,
-            DiagnosticEvent(
-                occurred_at=datetime.now(UTC),
-                code=DiagnosticCode.MANAGER_FAILED,
-                state=MonitorState.FAILED_CLOSED,
-                session_hash=hashlib.sha256(session_id.encode()).hexdigest(),
-            ),
-        )
-
-
 def _finish_turn(values: dict[str, JsonValue], path: Path) -> None:
+    values["pending_turn_id"] = None
+    values["pending_turn_timed_out_at"] = None
     values["managed_turn_id"] = None
     values["restart_request"] = None
     values["restart_claimed"] = False
@@ -310,3 +359,16 @@ def _optional_datetime(
     if parsed.tzinfo is None:
         raise CorruptStateError(path, CorruptReason.INVALID_VALUE)
     return parsed.astimezone(UTC)
+
+
+def _optional_nonnegative_float(
+    values: Mapping[str, JsonValue],
+    key: str,
+    path: Path,
+) -> float | None:
+    value = values.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
+        raise CorruptStateError(path, CorruptReason.INVALID_VALUE)
+    return float(value)

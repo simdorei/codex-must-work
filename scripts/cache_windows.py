@@ -32,12 +32,17 @@ _OPEN_REPARSE: Final = 0x00200000
 _OWNER_DACL: Final = 0x00000001 | 0x00000004
 _PROTECTED_DACL: Final = 0x80000000
 _NORMAL: Final = 0x80
+_ARCHIVE: Final = 0x20
 _DIRECTORY: Final = 0x10
 _STREAM_END: Final = 38
 
 
+class _CArgument(Protocol):
+    """Mark values accepted by dynamically loaded ctypes functions."""
+
+
 class _Function(Protocol):
-    def __call__(self, *arguments: object) -> int | None: ...
+    def __call__(self, *arguments: _CArgument) -> int | None: ...
 
 
 @final
@@ -174,11 +179,11 @@ def _apply(descriptor: int, directory: bool) -> None:
 
 
 def _verify(descriptor: int, path: Path, directory: bool) -> bool:
-    expected_attributes = _DIRECTORY if directory else _NORMAL
+    allowed_attributes = {_DIRECTORY} if directory else {_NORMAL, _ARCHIVE}
     metadata = os.fstat(descriptor)
     reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
     return (
-        getattr(metadata, "st_file_attributes", 0) == expected_attributes
+        getattr(metadata, "st_file_attributes", 0) in allowed_attributes
         and not getattr(metadata, "st_file_attributes", 0) & reparse
         and _security_sddl(descriptor) == _expected_sddl(directory)
         and _plain_streams(path, directory)

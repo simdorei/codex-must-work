@@ -42,7 +42,7 @@ def test_managed_completion_waits_for_owned_turn_before_runtime_removal(tmp_path
     root = tmp_path / "state"
     _ = enable_session(
         root,
-        request(root, observe_only=False, goal_companion=True),
+        request(root, observe_only=False, goal_companion=False),
         managed_report(),
     )
     path = runtime_path(root, SESSION_ID)
@@ -72,7 +72,7 @@ def test_managed_disable_removes_runtime_when_manager_never_became_ready(
     root = tmp_path / "state"
     _ = enable_session(
         root,
-        request(root, observe_only=False, goal_companion=True),
+        request(root, observe_only=False, goal_companion=False),
         managed_report(),
     )
     path = runtime_path(root, SESSION_ID)

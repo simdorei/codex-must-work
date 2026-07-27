@@ -18,6 +18,7 @@ _UNIT_MILLISECONDS: Final[dict[str, Decimal]] = {
     "m": Decimal(60_000),
     "h": Decimal(3_600_000),
 }
+MAX_THRESHOLD_MS: Final = 604_800_000
 
 
 class DurationErrorReason(StrEnum):

@@ -1,0 +1,23 @@
+[
+  {
+    "executable": false,
+    "path": "lib/python3.12/encodings/__pycache__/__init__.cpython-312.pyc",
+    "sha256": "39c95ed12262e1319899d4ab68f6b648e14fbc783bdc1672f5c2143884688866",
+    "size": 5858,
+    "type": "file"
+  },
+  {
+    "executable": false,
+    "path": "lib/python3.12/encodings/__pycache__/aliases.cpython-312.pyc",
+    "sha256": "ee4474c54e18ed4722d7b96b080b13592af84ebb00222f2f4ea3d3b21b5e8175",
+    "size": 12491,
+    "type": "file"
+  },
+  {
+    "executable": false,
+    "path": "lib/python3.12/encodings/__pycache__/utf_8.cpython-312.pyc",
+    "sha256": "5fad85640c3c81aedd0ef64c8e5dee0766d9ca74acb96fb4770b86ee6a1ec9a6",
+    "size": 2230,
+    "type": "file"
+  }
+]

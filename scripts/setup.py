@@ -21,6 +21,7 @@ from scripts.diagnostics import (
     MonitorState,
     append_diagnostic,
 )
+from scripts.goal_policy import enforce_goal_companion_policy
 from scripts.manager_lease import manager_lease_owner
 from scripts.private_root import ensure_private_root
 from scripts.session_shutdown import defer_session_shutdown
@@ -98,6 +99,7 @@ def enable_session(
     capabilities: CapabilityReport,
 ) -> ActivationResult:
     """Enable one session only after all requested capabilities are proven."""
+    enforce_goal_companion_policy(requested=request.goal_companion)
     relative_transcript = validate_activation_request(root, request)
     if request.observe_only:
         if capabilities.reason_code not in _OBSERVE_ONLY_REASONS:
@@ -111,8 +113,6 @@ def enable_session(
         and capabilities.auto_restart_ready
         and not request.observe_only
     )
-    if request.goal_companion and not effective_auto_restart:
-        raise ActivationError(reason_code="goal_companion_requires_managed_restart")
     capability_values: dict[str, JsonValue] = {
         "warning_delivery_ready": capabilities.warning_delivery_ready,
         "auto_restart_ready": capabilities.auto_restart_ready,
@@ -136,6 +136,7 @@ def enable_session(
         "permission_mode": request.permission_mode,
         "managed_mode": effective_auto_restart,
         "goal_companion": request.goal_companion,
+        "goal_identity_fingerprint": None,
         "warning_after_ms": int(request.settings.warning_after_ms),
         "restart_after_ms": int(request.settings.restart_after_ms),
         "auto_restart_requested_by_user": request.settings.auto_restart_requested_by_user,

@@ -7,16 +7,28 @@
     "windows-x64": {
       "archive": "cpython-3.12.13+20260510-windows-x64.tar.gz",
       "sha256": "24168aff2e7d93784c6a436124c4ebb79b076a4e289bde4902c08333507b71d0",
+      "tree_manifest": "windows-x64.json",
+      "bytecode_exclusion": "windows-x64.json",
+      "bytecode_exclusion_count": 554,
+      "bytecode_exclusion_sha256": "7bbebb687871c3de69b05de2988393ccc33ecdd209ec5f9cba4937384246ffd3",
       "upstream_asset": "cpython-3.12.13+20260510-x86_64-pc-windows-msvc-install_only_stripped.tar.gz"
     },
     "linux-x64": {
       "archive": "cpython-3.12.13+20260510-linux-x64.tar.gz",
       "sha256": "d480f5d5878910ecbae212bf23bd7c25d7b209eb8cf5e98823c977384d272e88",
+      "tree_manifest": "linux-x64.json",
+      "bytecode_exclusion": "linux-x64.json",
+      "bytecode_exclusion_count": 3,
+      "bytecode_exclusion_sha256": "8c5e78d11d454452253f94305563dc24a8082dc53142c9e8366c26080fcb8fa4",
       "upstream_asset": "cpython-3.12.13+20260510-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
     },
     "macos-arm64": {
       "archive": "cpython-3.12.13+20260510-macos-arm64.tar.gz",
       "sha256": "55bc1a5edbc8ac4da0081f4f5731ed2d1ed10c57cb37a820b2a0dbc7cad742e9",
+      "tree_manifest": "macos-arm64.json",
+      "bytecode_exclusion": "macos-arm64.json",
+      "bytecode_exclusion_count": 3,
+      "bytecode_exclusion_sha256": "3f890402ef9d930f1b8176daf91677ddded491416281ee4ef71a88ab5a915f93",
       "upstream_asset": "cpython-3.12.13+20260510-aarch64-apple-darwin-install_only_stripped.tar.gz"
     }
   },

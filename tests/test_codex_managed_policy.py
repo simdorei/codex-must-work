@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-import json
-import os
-import subprocess
 from base64 import b64encode
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
-from scripts import codex_compatibility
 from scripts import codex_compatibility_policy as policy_module
 from scripts.codex_compatibility import (
-    ALLOWED_CODEX_RELEASES,
     validate_codex_compatibility,
 )
 from scripts.codex_compatibility_policy import (
@@ -20,12 +14,10 @@ from scripts.codex_compatibility_policy import (
     MANAGED_SOURCE_KINDS_BY_RELEASE,
     MANAGED_SOURCE_ORDER,
     MANAGED_SOURCE_SEARCH_BY_RELEASE,
-    PolicySourceSpec,
 )
 from scripts.install_errors import InstallPluginError
 from tests.codex_compatibility_support import (
     ALLOWED,
-    binary_names,
     bundle_fixture,
     cloud_cache,
     fake_commands,
@@ -34,13 +26,13 @@ from tests.codex_compatibility_support import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from pathlib import Path
 
 
 def test_managed_search_order_is_frozen_for_all_allowed_releases() -> None:
     assert set(MANAGED_SOURCE_SEARCH_BY_RELEASE) == set(ALLOWED)
     assert all(order == MANAGED_SOURCE_ORDER for order in MANAGED_SOURCE_SEARCH_BY_RELEASE.values())
-    assert MANAGED_SOURCE_KINDS_BY_RELEASE == dict.fromkeys(ALLOWED, MANAGED_SOURCE_KIND_ORDER)
+    assert dict.fromkeys(ALLOWED, MANAGED_SOURCE_KIND_ORDER) == MANAGED_SOURCE_KINDS_BY_RELEASE
 
 
 def test_release_specs_use_codex_home_cloud_cache_for_both_logical_layers(

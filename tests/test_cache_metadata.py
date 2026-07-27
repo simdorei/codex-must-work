@@ -19,7 +19,11 @@ MANIFEST = "runtime/package-files.json"
 
 
 class _WinCall(Protocol):
-    def __call__(self, *arguments: object) -> int | None: ...
+    def __call__(self, *arguments: _CArgument) -> int | None: ...
+
+
+class _CArgument(Protocol):
+    """Mark values accepted by dynamically loaded ctypes functions."""
 
 
 def _source(root: Path) -> Path:
@@ -110,6 +114,11 @@ def _set_hidden(path: Path) -> None:
     assert setter(ctypes.c_wchar_p(str(path)), 0x2)
 
 
+def _set_archive(path: Path) -> None:
+    setter = cast("_WinCall", ctypes.WinDLL("kernel32", use_last_error=True).SetFileAttributesW)
+    assert setter(ctypes.c_wchar_p(str(path)), 0x20)
+
+
 def test_published_tree_has_exact_real_windows_policy(tmp_path: Path) -> None:
     _, _, target = _publish(tmp_path)
     paths = (target, *target.rglob("*"))
@@ -118,6 +127,13 @@ def test_published_tree_has_exact_real_windows_policy(tmp_path: Path) -> None:
         assert secure_windows_path(path, directory=directory, apply=False)
         expected = stat.FILE_ATTRIBUTE_DIRECTORY if directory else stat.FILE_ATTRIBUTE_NORMAL
         assert path.lstat().st_file_attributes == expected
+
+
+def test_windows_archive_marker_does_not_invalidate_secure_file(tmp_path: Path) -> None:
+    _, _, target = _publish(tmp_path)
+    path = target / "payload" / "a.txt"
+    _set_archive(path)
+    assert secure_windows_path(path, directory=False, apply=False)
 
 
 @pytest.mark.parametrize("object_kind", ["file", "directory"])
@@ -137,6 +153,6 @@ def test_real_windows_metadata_mutation_is_rejected(
         _weaken_dacl(path)
     else:
         _set_hidden(path)
-    with pytest.raises(InstallPluginError, match="cache_same_version_mismatch"):
+    with pytest.raises(InstallPluginError, match="installed_generation_conflict"):
         _ = publish_cache(source, home, "1.0.0")
     assert target.exists()

@@ -12,6 +12,7 @@ from tests.rollout_fixture import write_session_meta
 class FakeAppServer:
     def __init__(self) -> None:
         self.calls: list[str] = []
+        self.requests: list[tuple[str, dict[str, JsonValue]]] = []
         self.active: str | None = None
         self.completed: set[str] = set()
         self.turn_outcomes: dict[str, TurnOutcome] = {}
@@ -29,8 +30,8 @@ class FakeAppServer:
         timeout_seconds: float = 10.0,
     ) -> dict[str, JsonValue]:
         _ = timeout_seconds
-        _ = params
         self.calls.append(method)
+        self.requests.append((method, dict(params)))
         if method == "turn/start":
             self.turn_number += 1
             self.active = f"turn-{self.turn_number}"

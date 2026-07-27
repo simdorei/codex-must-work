@@ -6,19 +6,24 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import pytest
-
-from scripts import install_plugin, installer_observation
+from scripts import install_plugin
 from scripts.cache_types import CacheIdentity, CachePublication
 from scripts.codex_compatibility import CompatibilityResult
 from scripts.hook_trust import TrustedHookState
 from scripts.install_errors import InstallPluginError
 from scripts.install_plugin import install
-from scripts.installer_result import InstallResult
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from multiprocessing.synchronize import Event as EventType
+
+    import pytest
+
+    from scripts.installer_result import InstallResult
+
+type InstallerCallValue = (
+    Path | str | bool | bytes | CompatibilityResult | CacheIdentity | CachePublication | None
+)
 
 
 HOOKS_DISABLED = "codex_plugins_disabled"
@@ -45,7 +50,7 @@ class ContendedArgs:
 def contended_install(values: ContendedArgs) -> None:
     tempfile.tempdir = values.temp_root
 
-    def fail(*args: object, **kwargs: object) -> CompatibilityResult:
+    def fail(*args: InstallerCallValue, **kwargs: InstallerCallValue) -> CompatibilityResult:
         _ = args, kwargs
         values.entered.set()
         if values.hold:
@@ -86,18 +91,14 @@ def publication_fixture(home: Path, version: str = "1.2.3") -> CachePublication:
 
 
 def publisher(home: Path) -> Callable[[Path, Path, str], CachePublication]:
-    def publish(source_fixture: Path, _home: Path, version: str) -> CachePublication:
+    def publish(_source_fixture: Path, _home: Path, version: str) -> CachePublication:
         return publication_fixture(home, version)
 
     return publish
 
 
-def trusted_states(source_fixture: Path) -> tuple[TrustedHookState, ...]:
-    labels = (
-        "session_start",
-        "user_prompt_submit",
-        "stop",
-    )
+def trusted_states(_source_fixture: Path) -> tuple[TrustedHookState, ...]:
+    labels = ("session_start",)
     prefix = "codex-must-work@codex-must-work-local:hooks/hooks.json"
     return tuple(
         TrustedHookState(f"{prefix}:{label}:0:0", f"sha256:{index:064x}")
@@ -147,7 +148,7 @@ def failure_case(
     source = source_fixture(tmp_path)
     compatibility = compatibility_fixture(home)
 
-    def check(*args: object, **kwargs: object) -> CompatibilityResult:
+    def check(*args: InstallerCallValue, **kwargs: InstallerCallValue) -> CompatibilityResult:
         _ = args, kwargs
         return compatibility
 

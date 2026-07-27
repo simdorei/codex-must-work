@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, assert_never
+from typing import TYPE_CHECKING, Protocol, assert_never
 
 from scripts.app_server_protocol import TurnOutcome
 from scripts.goal_control import GoalControlError, GoalStatus
@@ -15,7 +15,17 @@ from scripts.setup import complete_session, disable_session
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from scripts.manager_goal import GoalGuard
+
+class GoalOutcomeGuard(Protocol):
+    """Expose only Goal operations needed after one terminal turn."""
+
+    def status_after_turn(self) -> GoalStatus:
+        """Return the exact bound Goal status."""
+        ...
+
+    def pause_for_interrupt(self) -> None:
+        """Pause automatic Goal continuation."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,7 +40,7 @@ class TurnResolution:
 def resolve_turn_outcome(
     root: Path,
     runtime: ManagerRuntime,
-    goal_guard: GoalGuard | None,
+    goal_guard: GoalOutcomeGuard | None,
     turn_id: str,
     outcome: TurnOutcome,
 ) -> TurnResolution:
@@ -57,7 +67,7 @@ def resolve_turn_outcome(
 def _resolve_completed(
     root: Path,
     runtime: ManagerRuntime,
-    goal_guard: GoalGuard | None,
+    goal_guard: GoalOutcomeGuard | None,
     turn_id: str,
 ) -> TurnResolution:
     if not runtime.view.goal_companion:
@@ -94,7 +104,7 @@ def _complete_goal(root: Path, runtime: ManagerRuntime, turn_id: str) -> TurnRes
 def _continue_active_goal(
     root: Path,
     runtime: ManagerRuntime,
-    goal_guard: GoalGuard,
+    goal_guard: GoalOutcomeGuard,
     turn_id: str,
 ) -> TurnResolution:
     try:
@@ -125,8 +135,11 @@ def _resolve_interrupted(
             return TurnResolution(keep_running=True, restart_prompt_pending=True)
         case InterruptClaimState.UNCLAIMED:
             if not runtime.view.goal_companion:
-                disable_session(root, runtime.session_id)
-                return TurnResolution(keep_running=False)
+                if runtime.shutdown_requested:
+                    disable_session(root, runtime.session_id)
+                    return TurnResolution(keep_running=False)
+                record_turn_finished(root, runtime.runtime_file, turn_id)
+                return TurnResolution(keep_running=True)
             return TurnResolution(
                 keep_running=False,
                 failure_reason="turn_interrupted_external",

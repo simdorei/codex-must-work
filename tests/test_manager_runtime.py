@@ -4,6 +4,8 @@ from pathlib import Path
 from scripts.manager_runtime import (
     load_manager_runtime,
     mark_manager_ready,
+    mark_pending_turn_timed_out,
+    record_pending_turn,
     record_restart_performed,
     record_turn_finished,
     record_turn_started,
@@ -75,6 +77,32 @@ def test_manager_runtime_records_owned_turn_lifecycle(tmp_path: Path) -> None:
     assert finished is not None
     assert finished.view.managed_turn_id is None
     assert finished.view.handoff_requested is True
+
+
+def test_pending_turn_is_persisted_before_exact_start_promotion(tmp_path: Path) -> None:
+    # Given
+    root, path = _runtime(tmp_path)
+
+    # When
+    record_pending_turn(root, path, "turn-1")
+    mark_pending_turn_timed_out(root, path, "turn-1", 12.0)
+
+    # Then
+    pending = load_manager_runtime(root, path.name)
+    assert pending is not None
+    assert pending.pending_turn_id == "turn-1"
+    assert pending.pending_turn_timed_out_at == 12.0
+    assert pending.view.managed_turn_id is None
+
+    # When
+    record_turn_started(root, path, "turn-1")
+
+    # Then
+    owned = load_manager_runtime(root, path.name)
+    assert owned is not None
+    assert owned.pending_turn_id is None
+    assert owned.pending_turn_timed_out_at is None
+    assert owned.view.managed_turn_id == "turn-1"
 
 
 def test_restart_completion_clears_only_exact_request_and_requeues_handoff(

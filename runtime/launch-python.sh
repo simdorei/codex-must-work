@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+export PYTHONDONTWRITEBYTECODE=1
 export PYTHONUTF8=1
 
 version='3.12.13+20260510'
@@ -24,17 +25,27 @@ case "$platform:$machine" in
 esac
 
 archive="$plugin_root/runtime/archives/cpython-$version-$target_name.tar.gz"
+prepared_target="$data_root/portable-python-$version"
+prepared_python="$prepared_target/python"
 target="$data_root/portable-python/$version/$target_name/python"
 python="$target/bin/python3"
 lock="$data_root/.portable-python.lock"
 stage=''
 owned_lock=false
 
+if [ -e "$prepared_target" ] && [ ! -x "$prepared_python" ]; then
+    echo "portable runtime is incomplete: $prepared_target" >&2
+    exit 1
+fi
+if [ -x "$prepared_python" ]; then
+    exec "$prepared_python" -B "$@"
+fi
+
 mkdir -p "$data_root"
 i=0
 while ! mkdir "$lock" 2>/dev/null; do
     if [ -x "$python" ]; then
-        exec "$python" "$@"
+        exec "$python" -B "$@"
     fi
     i=$((i + 1))
     if [ "$i" -ge 550 ]; then
@@ -89,4 +100,4 @@ fi
 
 cleanup
 trap - EXIT HUP INT TERM
-exec "$python" "$@"
+exec "$python" -B "$@"

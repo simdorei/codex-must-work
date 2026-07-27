@@ -29,6 +29,8 @@ class DiagnosticCode(StrEnum):
     HEARTBEAT_ACTIVE = "heartbeat_active"
     WATCHER_COMPLETED = "watcher_completed"
     OBSERVABLE_PROGRESS_SILENCE = "observable_progress_silence"
+    PROGRESS_RECOVERED = "progress_recovered"
+    DISCORD_NOTIFICATION_FAILED = "discord_notification_failed"
     RESTART_REQUESTED = "restart_requested"
     RESTART_PERFORMED = "restart_performed"
     RESTART_UNAVAILABLE = "restart_unavailable"
@@ -102,6 +104,15 @@ def append_diagnostic(
     max_bytes: int = MAX_LOG_BYTES,
 ) -> None:
     """Append one bounded JSON line, retaining at most two backups."""
+    _ = append_diagnostic_once(root, event, max_bytes)
+
+
+def append_diagnostic_once(
+    root: Path,
+    event: DiagnosticEvent,
+    max_bytes: int = MAX_LOG_BYTES,
+) -> bool:
+    """Append a unique bounded event and report whether it was newly written."""
     if max_bytes < 1:
         _invalid("max_bytes_invalid")
     path = _diagnostic_path(root)
@@ -111,12 +122,22 @@ def append_diagnostic(
     with ExclusiveWriteLock(path):
         _ensure_direct_file(path)
         if event.event_id is not None and _contains_event_id(path, event.event_id):
-            return
+            return False
         existing = _complete_bytes(path, max_bytes)
         if len(existing) + len(encoded) > max_bytes:
             _rotate(path)
             existing = b""
         _atomic_log_write(path, existing + encoded)
+    return True
+
+
+def diagnostic_event_exists(root: Path, event_id: str) -> bool:
+    """Return whether one stable event identity exists in retained diagnostics."""
+    if not _is_sha256(event_id):
+        _invalid("event_id_invalid")
+    path = _diagnostic_path(root)
+    with ExclusiveWriteLock(path):
+        return _contains_event_id(path, event_id)
 
 
 def _diagnostic_path(root: Path) -> Path:

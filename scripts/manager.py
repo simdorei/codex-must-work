@@ -19,12 +19,13 @@ from scripts.app_server_client import ResidentAppServer
 from scripts.app_server_protocol import AppServerProtocolError
 from scripts.codex_executable import CodexExecutableError
 from scripts.goal_control import GoalControlError
+from scripts.goal_policy import enforce_goal_companion_policy
 from scripts.manager_engine import ManagerEngine
+from scripts.manager_failure import record_manager_failure
 from scripts.manager_lease import acquire_manager_lease, release_manager_lease
 from scripts.manager_runtime import (
     load_manager_runtime,
     mark_manager_stopped,
-    record_manager_failure,
 )
 from scripts.manager_runtime_values import ManagerRuntimeError
 from scripts.private_root import ensure_private_root
@@ -53,6 +54,13 @@ def run_manager(runtime_name: str) -> int:
     """Own and supervise one hashed runtime until it is disabled."""
     root = state_root()
     ensure_private_root(root)
+    initial_runtime = load_manager_runtime(root, runtime_name)
+    if initial_runtime is not None and _reject_unsafe_goal_companion(
+        root,
+        runtime_name,
+        requested=initial_runtime.view.goal_companion,
+    ):
+        return 1
     lease = acquire_manager_lease(root, runtime_name)
     if lease is None:
         return 0
@@ -60,7 +68,6 @@ def run_manager(runtime_name: str) -> int:
     engine: ManagerEngine | None = None
     exit_code = 0
     try:
-        initial_runtime = load_manager_runtime(root, runtime_name)
         if initial_runtime is not None:
             client = ResidentAppServer(initial_runtime.executable_sha256)
             engine = ManagerEngine(root, runtime_name, client, pid=os.getpid())
@@ -83,6 +90,21 @@ def run_manager(runtime_name: str) -> int:
         if cleanup_errors:
             exit_code = 1
     return exit_code
+
+
+def _reject_unsafe_goal_companion(
+    root: Path,
+    runtime_name: str,
+    *,
+    requested: bool,
+) -> bool:
+    try:
+        enforce_goal_companion_policy(requested=requested)
+    except GoalControlError as error:
+        _record_failure_if_present(root, runtime_name, error)
+        _ = sys.stderr.write(f"Codex Must Work manager failed: {error}\n")
+        return True
+    return False
 
 
 def _record_failure_if_present(root: Path, runtime_name: str, error: Exception) -> None:

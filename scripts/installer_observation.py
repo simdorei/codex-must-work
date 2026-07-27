@@ -171,9 +171,7 @@ def classify_prior(codex_home: Path, lease: InstallerLease) -> PriorState:
         )
     try:
         expected = trusted_hook_states_for_plugin(source, _MARKETPLACE)
-        restorable = observed.trusted_hooks == tuple(
-            sorted(expected, key=lambda item: item.key)
-        )
+        restorable = observed.trusted_hooks == tuple(sorted(expected, key=lambda item: item.key))
         identity, digest = snapshot_retained_cache(source) if restorable else (None, None)
     except (InstallPluginError, OSError):
         identity, digest, restorable = None, None, False

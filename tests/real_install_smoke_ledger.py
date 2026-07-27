@@ -13,11 +13,7 @@ if TYPE_CHECKING:
 type TomlValue = str | int | float | bool | list[TomlValue] | dict[str, TomlValue]
 type TomlTable = dict[str, TomlValue]
 
-CMW_EVENTS: Final = (
-    "session_start",
-    "user_prompt_submit",
-    "stop",
-)
+CMW_EVENTS: Final = ("session_start",)
 _PLUGIN: Final = "codex-must-work@codex-must-work-local"
 _MARKETPLACE: Final = "codex-must-work-local"
 _PREFIX: Final = f"{_PLUGIN}:hooks/hooks.json:"
@@ -25,12 +21,9 @@ _LEGACY: Final = "codex-must-work@simdorei"
 _HEADERS: Final = re.compile(rb"(?m)^\[([^\]\r\n]+)\][ \t]*(?:#.*)?\r?$")
 
 
+@dataclass(frozen=True, slots=True)
 class SmokeError(Exception):
-    __slots__ = ("reason",)
-
-    def __init__(self, reason: str) -> None:
-        super().__init__(reason)
-        self.reason = reason
+    reason: str
 
     @override
     def __str__(self) -> str:
@@ -183,19 +176,19 @@ def _remove(tree: TomlTable, *, had_legacy: bool) -> None:
     for parent, key in (("features", "plugins"), ("marketplaces", _MARKETPLACE)):
         table = tree.get(parent)
         if isinstance(table, dict):
-            table.pop(key, None)
+            _ = table.pop(key, None)
     plugins = tree.get("plugins")
     if isinstance(plugins, dict):
-        plugins.pop(_PLUGIN, None)
+        _ = plugins.pop(_PLUGIN, None)
         legacy = plugins.get(_LEGACY)
         if had_legacy and isinstance(legacy, dict):
-            legacy.pop("enabled", None)
+            _ = legacy.pop("enabled", None)
     hooks = tree.get("hooks")
     state = hooks.get("state") if isinstance(hooks, dict) else None
     if isinstance(state, dict):
         for key in tuple(state):
             if key.startswith(_PREFIX):
-                state.pop(key)
+                _ = state.pop(key)
 
 
 def _prune(tree: TomlTable) -> None:
@@ -203,7 +196,7 @@ def _prune(tree: TomlTable) -> None:
         if isinstance(value, dict):
             _prune(value)
             if not value:
-                tree.pop(key)
+                _ = tree.pop(key)
 
 
 def _protected(data: bytes, baseline: TomlTable) -> bytes:

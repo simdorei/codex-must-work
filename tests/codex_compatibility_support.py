@@ -4,35 +4,26 @@ import json
 import os
 import subprocess
 import tomllib
-from base64 import b64encode
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import pytest
-
 from scripts import codex_compatibility
-from scripts import codex_compatibility_policy as policy_module
-from scripts.codex_compatibility import (
-    ALLOWED_CODEX_RELEASES,
-    CompatibilityResult,
-    validate_codex_compatibility,
-)
 from scripts.codex_compatibility_policy import (
     MANAGED_SOURCE_KIND_ORDER,
-    MANAGED_SOURCE_KINDS_BY_RELEASE,
     MANAGED_SOURCE_ORDER,
-    MANAGED_SOURCE_SEARCH_BY_RELEASE,
     PolicySourceSpec,
 )
-from scripts.install_errors import InstallPluginError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    import pytest
 
 ALLOWED = {
     "0.144.0-alpha.4": "049586f41571e74b44c841868bca3a2233214a71",
     "0.144.0": "767822446c7a594caa19609ca435281a9ec67e0d",
     "0.145.0-alpha.18": "f84f9a6406cc55b210395f71b4c6aed236fc7ebb",
+    "0.146.0-alpha.3.1": "ff75c5b939c477c49eb1bd5248da6dab71b109d1",
 }
 
 

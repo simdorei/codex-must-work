@@ -1,15 +1,24 @@
 """Track the minimum verified Codex app-server protocol state."""
+# noqa: SIZE_OK  -- one protocol state machine validates one app-server connection
 
 from __future__ import annotations
 
 import json
+import time
+from collections import deque
+from dataclasses import dataclass
 from enum import StrEnum, unique
-from typing import TYPE_CHECKING, Protocol, cast, final
+from typing import TYPE_CHECKING, Final, Protocol, cast, final
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from scripts.state_io import JsonValue
 
 type JsonObject = dict[str, JsonValue]
+_MAX_RETAINED_TURN_OUTCOMES: Final = 512
+_MAX_TURN_CORRELATIONS: Final = 2048
+_CORRELATION_EXPIRY_SECONDS: Final = 600.0
 
 
 @unique
@@ -21,6 +30,34 @@ class TurnOutcome(StrEnum):
     FAILED = "failed"
     IN_PROGRESS = "inProgress"
     INVALID = "invalid"
+
+
+@unique
+class AppServerActivityKind(StrEnum):
+    """Closed activity variants consumed by the daemon scheduler."""
+
+    TURN_STARTED = "turn_started"
+    TURN_PROGRESS = "turn_progress"
+    TURN_COMPLETED = "turn_completed"
+    SERVER_REQUEST = "server_request"
+    CONNECTION_CLOSED = "connection_closed"
+
+
+@dataclass(frozen=True, slots=True)
+class AppServerActivity:
+    """Describe activity without retaining prompts, output, or tool arguments."""
+
+    kind: AppServerActivityKind
+    thread_id: str | None = None
+    turn_id: str | None = None
+    outcome: TurnOutcome | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _TurnCorrelation:
+    thread_id: str
+    observed_at: float
+    live: bool
 
 
 class ManagedAppServer(Protocol):
@@ -99,13 +136,16 @@ class AppServerProtocolError(RuntimeError):
 class AppServerEventState:
     """Retain responses, exact active turns, and unsupported server requests."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, clock: Callable[[], float] = time.monotonic) -> None:
         """Create empty protocol state for one resident connection."""
+        self._clock = clock
         self.responses: dict[str, JsonObject] = {}
         self.active_turns: dict[str, str] = {}
         self.latest_started_turns: dict[str, str] = {}
         self.started_turns: set[str] = set()
         self.turn_outcomes: dict[str, TurnOutcome] = {}
+        self._completed_turns: deque[str] = deque()
+        self._turn_correlations: dict[str, _TurnCorrelation] = {}
         self.pending_server_request: str | None = None
 
     def record(self, message: JsonObject) -> None:
@@ -126,6 +166,7 @@ class AppServerEventState:
         if method == "turn/started" and turn_id is not None:
             self.started_turns.add(turn_id)
             if thread_id is not None:
+                self.correlate_turn(thread_id, turn_id)
                 self.active_turns[thread_id] = turn_id
                 self.latest_started_turns[thread_id] = turn_id
         elif method == "turn/completed" and turn_id is not None:
@@ -138,7 +179,24 @@ class AppServerEventState:
                     for active_thread, active_turn in self.active_turns.items()
                     if active_turn != turn_id
                 }
-            _ = self.turn_outcomes.setdefault(turn_id, outcome)
+            correlation = self._turn_correlations.get(turn_id)
+            if correlation is not None:
+                self._turn_correlations[turn_id] = _TurnCorrelation(
+                    correlation.thread_id,
+                    self._clock(),
+                    live=False,
+                )
+            self._remember_outcome(turn_id, outcome)
+
+    def _remember_outcome(self, turn_id: str, outcome: TurnOutcome) -> None:
+        if turn_id in self.turn_outcomes:
+            return
+        self.turn_outcomes[turn_id] = outcome
+        self._completed_turns.append(turn_id)
+        if len(self._completed_turns) > _MAX_RETAINED_TURN_OUTCOMES:
+            expired_turn = self._completed_turns.popleft()
+            _ = self.turn_outcomes.pop(expired_turn, None)
+            self.started_turns.discard(expired_turn)
 
     def take_response(self, request_id: str) -> JsonObject | None:
         """Remove and return one response matched by request id."""
@@ -154,6 +212,7 @@ class AppServerEventState:
 
     def bind_started_turn(self, thread_id: str, turn_id: str) -> bool:
         """Bind a thread-less start notification to its initiating request."""
+        self.correlate_turn(thread_id, turn_id)
         if turn_id in self.turn_outcomes:
             return True
         if turn_id not in self.started_turns:
@@ -161,6 +220,34 @@ class AppServerEventState:
         self.active_turns[thread_id] = turn_id
         self.latest_started_turns[thread_id] = turn_id
         return True
+
+    def correlate_turn(self, thread_id: str, turn_id: str) -> None:
+        """Retain one live exact turn owner without evicting another live owner."""
+        now = self._clock()
+        self._expire_correlations(now)
+        existing = self._turn_correlations.get(turn_id)
+        if existing is None and len(self._turn_correlations) >= _MAX_TURN_CORRELATIONS:
+            message = "app_server_correlation_capacity"
+            raise AppServerProtocolError(message)
+        self._turn_correlations[turn_id] = _TurnCorrelation(thread_id, now, live=True)
+
+    def thread_for_turn(self, turn_id: str) -> str | None:
+        """Return the retained owner for one correlated turn."""
+        self._expire_correlations(self._clock())
+        correlation = self._turn_correlations.get(turn_id)
+        return None if correlation is None else correlation.thread_id
+
+    def _expire_correlations(self, now: float) -> None:
+        expired = tuple(
+            turn_id
+            for turn_id, correlation in self._turn_correlations.items()
+            if not correlation.live and now - correlation.observed_at > _CORRELATION_EXPIRY_SECONDS
+        )
+        for turn_id in expired:
+            correlation = self._turn_correlations.pop(turn_id)
+            self.started_turns.discard(turn_id)
+            if self.latest_started_turns.get(correlation.thread_id) == turn_id:
+                _ = self.latest_started_turns.pop(correlation.thread_id, None)
 
     def was_started(self, turn_id: str) -> bool:
         """Return whether this connection observed the turn start."""

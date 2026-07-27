@@ -21,6 +21,8 @@ from scripts.durations import (
     ThresholdOrderError,
     parse_duration_ms,
 )
+from scripts.goal_control import GoalControlError
+from scripts.goal_policy import enforce_goal_companion_policy
 from scripts.manager_launch import ManagerLaunchError, launch_manager
 from scripts.manager_reuse import reuse_ready_manager
 from scripts.setup import (
@@ -50,6 +52,7 @@ def main(argv: list[str] | None = None) -> int:
         ActivationError,
         CodexExecutableError,
         DurationParseError,
+        GoalControlError,
         ManagerLaunchError,
         StateError,
         ThresholdOrderError,
@@ -74,6 +77,7 @@ def _disable(root: Path, args: CliArgs) -> int:
 
 
 def _enable(root: Path, args: CliArgs) -> int:
+    enforce_goal_companion_policy(requested=args.goal_companion)
     if args.transcript_path is None:
         raise ActivationError(reason_code="transcript_path_missing")
     settings = _settings_from_args(args, root)

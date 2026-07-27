@@ -251,10 +251,24 @@ def atomic_json_write(
             handle.flush()
             os.fsync(handle.fileno())
         temporary_path.chmod(_FILE_MODE)
-        _ = temporary_path.replace(path)
+        _replace_after_readers_close(temporary_path, path)
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
+
+
+def _replace_after_readers_close(source: Path, target: Path) -> None:
+    """Bound a Windows atomic-replace wait for short-lived Python readers."""
+    deadline = time.monotonic() + _LOCK_TIMEOUT_SECONDS
+    while True:
+        try:
+            _ = source.replace(target)
+        except PermissionError:
+            if os.name != "nt" or time.monotonic() >= deadline:
+                raise
+            time.sleep(_LOCK_RETRY_SECONDS)
+        else:
+            return
 
 
 def open_direct_file(path: Path, flags: int) -> int:

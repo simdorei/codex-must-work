@@ -7,16 +7,18 @@ import os
 import secrets
 import stat
 import sys
-from pathlib import Path
-from typing import Never, cast
+from typing import TYPE_CHECKING, Never, cast
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 from scripts.cache_package import expected_directories
 from scripts.cache_security import create_secure_directory, require_directory, secure_identity
 from scripts.cache_semver import higher
 from scripts.cache_types import CacheIdentity, identity
-from scripts.cache_windows import mark_windows_delete, open_locked
 from scripts.install_errors import InstallPluginError
 from scripts.private_root import PrivateRootError, ensure_private_root
+from scripts.runtime_cleanup import delete_runtime_tree
 from scripts.state_io import UnsafeStatePathError, open_direct_file
 from scripts.windows_file import flush_windows_directory, open_windows_path, rename_windows_file
 
@@ -152,63 +154,7 @@ def remove_tree(root: Path, expected: CacheIdentity) -> None:
 
 
 def _delete_quarantined(root: Path, expected: CacheIdentity) -> None:
-    if os.name == "nt":
-        _delete_windows_tree(root, expected)
-        return
-    if not same_path(root, expected):
-        _fail("cache_cleanup_failed")
-    for entry in tuple(os.scandir(root)):
-        path = Path(entry.path)
-        metadata = path.lstat()
-        reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
-        if stat.S_ISLNK(metadata.st_mode) or getattr(metadata, "st_file_attributes", 0) & reparse:
-            _fail("cache_cleanup_failed")
-        if stat.S_ISDIR(metadata.st_mode):
-            _delete_quarantined(path, identity(metadata))
-        elif stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1:
-            opened = open_direct_file(path, os.O_RDONLY | getattr(os, "O_BINARY", 0))
-            try:
-                if identity(os.fstat(opened)) != identity(path.lstat()):
-                    _fail("cache_cleanup_failed")
-                path.unlink()
-            finally:
-                os.close(opened)
-        else:
-            _fail("cache_cleanup_failed")
-    if not same_path(root, expected):
-        _fail("cache_cleanup_failed")
-    root.rmdir()
-
-
-def _delete_windows_tree(root: Path, expected: CacheIdentity) -> None:
-    descriptor = open_locked(root, delete_access=True)
-    try:
-        opened = os.fstat(descriptor)
-        if identity(opened) != expected or not stat.S_ISDIR(opened.st_mode):
-            _fail("cache_cleanup_failed")
-        for entry in tuple(os.scandir(root)):
-            path = Path(entry.path)
-            metadata = path.lstat()
-            reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
-            if getattr(metadata, "st_file_attributes", 0) & reparse:
-                _fail("cache_cleanup_failed")
-            if stat.S_ISDIR(metadata.st_mode):
-                _delete_windows_tree(path, identity(metadata))
-                continue
-            if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
-                _fail("cache_cleanup_failed")
-            child = open_locked(path, delete_access=True)
-            try:
-                if identity(os.fstat(child)) != identity(metadata):
-                    _fail("cache_cleanup_failed")
-                mark_windows_delete(child)
-            finally:
-                os.close(child)
-        if identity(os.fstat(descriptor)) != expected:
-            _fail("cache_cleanup_failed")
-        mark_windows_delete(descriptor)
-    finally:
-        os.close(descriptor)
+    delete_runtime_tree(root, expected)
 
 
 def _ordinary_directory(path: Path) -> Path:

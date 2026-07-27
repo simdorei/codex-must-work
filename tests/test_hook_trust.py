@@ -24,21 +24,11 @@ def _json_loader() -> _JsonLoader:
 
 _LOAD_JSON: Final = _json_loader()
 _SOURCE_ROOT: Final = Path(__file__).parents[1]
-_KEYS: Final = (
-    "codex-must-work@codex-must-work-local:hooks/hooks.json:session_start:0:0",
-    "codex-must-work@codex-must-work-local:hooks/hooks.json:user_prompt_submit:0:0",
-    "codex-must-work@codex-must-work-local:hooks/hooks.json:stop:0:0",
-)
+_KEYS: Final = ("codex-must-work@codex-must-work-local:hooks/hooks.json:session_start:0:0",)
 _WINDOWS_HASHES: Final = (
     "sha256:bc47873f83656027c970cf9b656dbe96f1809f20eb658b5843529e4be0788e1c",
-    "sha256:92c01da61756375d56bbdc11d5cad9b8ef927d8a1aa820f875ba32336838f297",
-    "sha256:b941d4836119cbe4f147c4fd0d28ccc170089e48f3683eb5130cdc4df28c2324",
 )
-_POSIX_HASHES: Final = (
-    "sha256:002cb7f93a1c9ac91f32267bba2b9d579eb6981536fbd30b7007c46aa1d95621",
-    "sha256:01dfbd0d3b4ad7a75224890f11197c1942caa7b22da9ee5fc674a03d93cc9da0",
-    "sha256:e06d698ff9789ae863e2a829d7459d7717a977726298dca5691bf65ec6951093",
-)
+_POSIX_HASHES: Final = ("sha256:002cb7f93a1c9ac91f32267bba2b9d579eb6981536fbd30b7007c46aa1d95621",)
 
 
 def _copy_plugin(tmp_path: Path) -> Path:
@@ -130,7 +120,7 @@ def test_default_manifest_discovers_exact_hook_keys(tmp_path: Path) -> None:
     # When: Codex's default hooks/hooks.json discovery is mirrored.
     states = _states(root, HookPlatform.POSIX)
 
-    # Then: the same exact three source-relative keys are produced.
+    # Then: the same exact source-relative key is produced.
     assert tuple(state.key for state in states) == _KEYS
 
 
@@ -153,22 +143,6 @@ def test_explicit_hook_path_normalizes_to_exact_source(
     assert tuple(state.key for state in states) == _KEYS
 
 
-@pytest.mark.parametrize("event", ["UserPromptSubmit", "Stop"])
-def test_matcher_is_discarded_for_matcherless_events(tmp_path: Path, event: str) -> None:
-    # Given: a matcher is injected on an event for which Codex ignores matchers.
-    root = _copy_plugin(tmp_path)
-    hooks_path = root / "hooks" / "hooks.json"
-    before, document = _states(root, HookPlatform.POSIX), _read_object(hooks_path)
-    _group(_events(document), event)["matcher"] = "ignored-value"
-    _write_object(hooks_path, document)
-
-    # When: the modified manifest is fingerprinted.
-    after = _states(root, HookPlatform.POSIX)
-
-    # Then: its complete canonical trust map is unchanged.
-    assert after == before
-
-
 def test_matcher_changes_hash_for_matcher_supporting_event(tmp_path: Path) -> None:
     # Given: SessionStart receives a meaningful Codex matcher.
     root = _copy_plugin(tmp_path)
@@ -180,9 +154,8 @@ def test_matcher_changes_hash_for_matcher_supporting_event(tmp_path: Path) -> No
     # When: the modified manifest is fingerprinted.
     after = _states(root, HookPlatform.POSIX)
 
-    # Then: only the matching event's hash changes.
+    # Then: the matching event's hash changes.
     assert after[0].trusted_hash != before[0].trusted_hash
-    assert after[1:] == before[1:]
 
 
 def test_windows_command_falls_back_only_when_override_is_absent(tmp_path: Path) -> None:
@@ -212,7 +185,7 @@ def test_timeout_uses_default_and_minimum(
     for root, timeout in zip(roots, (first, second), strict=True):
         hooks_path = root / "hooks" / "hooks.json"
         document = _read_object(hooks_path)
-        handler = _handler(_events(document), "Stop")
+        handler = _handler(_events(document), "SessionStart")
         if timeout is None:
             _ = handler.pop("timeout")
         else:
@@ -220,7 +193,7 @@ def test_timeout_uses_default_and_minimum(
         _write_object(hooks_path, document)
 
     # When: both canonical identities are calculated.
-    hashes = tuple(_states(root, HookPlatform.POSIX)[-1].trusted_hash for root in roots)
+    hashes = tuple(_states(root, HookPlatform.POSIX)[0].trusted_hash for root in roots)
 
     # Then: missing means 600 and zero clamps to one.
     assert hashes[0] == hashes[1]
@@ -231,14 +204,14 @@ def test_status_message_is_preserved_in_hash(tmp_path: Path) -> None:
     root = _copy_plugin(tmp_path)
     hooks_path = root / "hooks" / "hooks.json"
     before, document = _states(root, HookPlatform.POSIX), _read_object(hooks_path)
-    _handler(_events(document), "Stop")["statusMessage"] = "Waiting"
+    _handler(_events(document), "SessionStart")["statusMessage"] = "Waiting"
     _write_object(hooks_path, document)
 
     # When: the updated identity is calculated.
     after = _states(root, HookPlatform.POSIX)
 
     # Then: the optional status text participates in the canonical hash.
-    assert after[-1].trusted_hash != before[-1].trusted_hash
+    assert after[0].trusted_hash != before[0].trusted_hash
 
 
 @pytest.mark.parametrize(
@@ -287,29 +260,29 @@ def test_rejects_invalid_manifest_without_partial_trust(  # noqa: C901, PLR0912,
         case "malformed_hooks":
             _ = hooks_path.write_text("{", encoding="utf-8")
         case "missing_event":
-            _ = events.pop("Stop")
+            _ = events.pop("SessionStart")
         case "extra_event":
-            events["PreCompact"] = events["Stop"]
+            events["PreCompact"] = events["SessionStart"]
         case "async":
-            _handler(events, "Stop")["async"] = True
+            _handler(events, "SessionStart")["async"] = True
         case "non_command":
-            _handler(events, "Stop")["type"] = "prompt"
+            _handler(events, "SessionStart")["type"] = "prompt"
         case "empty":
-            _handler(events, "Stop")["command"] = " "
+            _handler(events, "SessionStart")["command"] = " "
         case "multiple_groups":
-            groups = events["Stop"]
+            groups = events["SessionStart"]
             assert isinstance(groups, list)
             groups.append(groups[0])
         case "multiple_handlers":
-            handlers = _group(events, "Stop")["hooks"]
+            handlers = _group(events, "SessionStart")["hooks"]
             assert isinstance(handlers, list)
             handlers.append(handlers[0])
         case "timeout":
-            _handler(events, "Stop")["timeout"] = -1
+            _handler(events, "SessionStart")["timeout"] = -1
         case "matcher":
-            _group(events, "Stop")["matcher"] = 7
+            _group(events, "SessionStart")["matcher"] = 7
         case "status":
-            _handler(events, "Stop")["statusMessage"] = 7
+            _handler(events, "SessionStart")["statusMessage"] = 7
         case "missing_file":
             hooks_path.unlink()
         case _:

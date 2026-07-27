@@ -3,6 +3,9 @@ __pycache__/
 .ruff_cache/
 .tooling/
 .venv/
+.env
+.env.*
+!.env.example
 *.py[cod]
 build/
 dist/

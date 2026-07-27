@@ -12,11 +12,7 @@ from scripts.hook_trust import TrustedHookState
 from scripts.install_errors import InstallPluginError
 
 PREFIX = "codex-must-work@codex-must-work-local:hooks/hooks.json"
-EVENTS = (
-    "session_start",
-    "user_prompt_submit",
-    "stop",
-)
+EVENTS = ("session_start",)
 
 
 def _hooks() -> tuple[TrustedHookState, ...]:
@@ -127,6 +123,34 @@ def test_crlf_edit_removes_only_stale_owned_hook(
     assert owned == {hook.key.encode() for hook in _hooks()}
 
 
+def test_upgrade_replaces_old_cmw_turn_hooks_without_touching_other_plugin(
+    home: Path,
+    mutation: ConfigMutation,
+) -> None:
+    # Given
+    lazy_key = "lazy-plugin@local:hooks/hooks.json:user_prompt_submit:0:0"
+    old_keys = (
+        f"{PREFIX}:user_prompt_submit:0:0",
+        f"{PREFIX}:stop:0:0",
+    )
+    raw = (
+        b"[features]\nplugins = false\n"
+        + "".join(
+            f'[hooks.state."{key}"]\nenabled = true\ntrusted_hash = "sha256:old"\n'
+            for key in (*old_keys, lazy_key)
+        ).encode()
+    )
+
+    # When
+    updated = _apply(home, mutation, raw)
+
+    # Then
+    assert all(key.encode() not in updated for key in old_keys)
+    assert mutation.trusted_hooks[0].key.encode() in updated
+    assert lazy_key.encode() in updated
+    assert b'trusted_hash = "sha256:old"' in updated
+
+
 @pytest.mark.parametrize(
     ("ending", "count"),
     [(ending, count) for ending in (b"\n", b"\r\n") for count in range(12)],
@@ -174,9 +198,8 @@ def test_rejects_ambiguous_or_malformed_toml(
 INVALID_HOOKS = [
     _hooks()[:-1],
     (*_hooks(), _hooks()[0]),
-    (*_hooks()[:-1], _hooks()[0]),
-    tuple(TrustedHookState(f"other:{index}", f"sha256:{index:064x}") for index in range(3)),
-    tuple(TrustedHookState(f"{PREFIX}:event_{index}:0:0", "bad") for index in range(3)),
+    (TrustedHookState("other:0", f"sha256:{0:064x}"),),
+    (TrustedHookState(f"{PREFIX}:event_0:0:0", "bad"),),
 ]
 
 

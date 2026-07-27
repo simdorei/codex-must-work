@@ -41,23 +41,15 @@ class HookPlatform(StrEnum):
 
 class _HookEvent(StrEnum):
     SESSION_START = "SessionStart"
-    USER_PROMPT_SUBMIT = "UserPromptSubmit"
-    STOP = "Stop"
 
     @property
     def key_label(self) -> str:
         return _EVENT_LABELS[self]
 
-    @property
-    def supports_matcher(self) -> bool:
-        return self not in {_HookEvent.USER_PROMPT_SUBMIT, _HookEvent.STOP}
-
 
 _APPROVED_EVENTS: Final = tuple(_HookEvent)
 _EVENT_LABELS: Final = {
     _HookEvent.SESSION_START: "session_start",
-    _HookEvent.USER_PROMPT_SUBMIT: "user_prompt_submit",
-    _HookEvent.STOP: "stop",
 }
 TRUSTED_HOOK_LABELS: Final = tuple(event.key_label for event in _APPROVED_EVENTS)
 TRUSTED_HOOK_COUNT: Final = len(TRUSTED_HOOK_LABELS)
@@ -224,7 +216,7 @@ def _command_hook_hash(event: _HookEvent, group: _HookGroup, platform: HookPlatf
     if group.handler.status_message is not None:
         handler["statusMessage"] = group.handler.status_message
     identity: JsonObject = {"event_name": event.key_label, "hooks": [handler]}
-    if event.supports_matcher and group.matcher is not None:
+    if group.matcher is not None:
         identity["matcher"] = group.matcher
     canonical = json.dumps(_canonical_json(identity), ensure_ascii=False, separators=(",", ":"))
     return f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()}"

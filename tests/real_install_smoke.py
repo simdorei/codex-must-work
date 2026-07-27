@@ -29,6 +29,14 @@ class Arguments:
     verify_idempotent_reinstall: bool
 
 
+class _ArgumentNamespace(argparse.Namespace):
+    codex_home: Path = Path()
+    source_root: Path = Path()
+    expected_source_head: str = ""
+    expected_source_tree: str = ""
+    verify_idempotent_reinstall: bool = False
+
+
 class Runner(Protocol):
     def __call__(
         self, arguments: tuple[str, ...], environment: dict[str, str]
@@ -49,7 +57,8 @@ def parse_args(argv: list[str] | None = None) -> Arguments:
     _ = parser.add_argument("--expected-source-head", required=True)
     _ = parser.add_argument("--expected-source-tree", required=True)
     _ = parser.add_argument("--verify-idempotent-reinstall", required=True, action="store_true")
-    namespace = parser.parse_args(argv)
+    namespace = _ArgumentNamespace()
+    _ = parser.parse_args(argv, namespace=namespace)
     return Arguments(
         namespace.codex_home,
         namespace.source_root,
@@ -70,7 +79,6 @@ def run_codex(
     environment = dict(os.environ if parent_environment is None else parent_environment)
     environment["CODEX_HOME"] = str(codex_home)
     prompt = (
-        "이 문장을 영어로 이해하고 첫 줄에 번역 안내를 유지한 뒤 "
-        "마지막 줄에 SMOKE_OK를 쓰세요."
+        "이 문장을 영어로 이해하고 첫 줄에 번역 안내를 유지한 뒤 마지막 줄에 SMOKE_OK를 쓰세요."
     )
     return runner((str(executable), "exec", "--json", prompt), environment)

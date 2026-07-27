@@ -24,11 +24,7 @@ _SELECTION_CONFLICT: Final = "cache_selection_conflict"
 def validate_install_preflight(codex_home: Path, source_root: Path) -> PluginManifest:
     """Validate the exact package identity and read-only cache selection."""
     manifest = read_plugin_manifest(source_root)
-    if (
-        manifest.name != _PLUGIN
-        or manifest.version == "local"
-        or not safe_name(manifest.version)
-    ):
+    if manifest.name != _PLUGIN or manifest.version == "local" or not safe_name(manifest.version):
         _fail("plugin_manifest_identity_invalid")
     _validate_existing_selection(codex_home, manifest.version)
     return manifest

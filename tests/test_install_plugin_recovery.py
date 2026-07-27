@@ -1,21 +1,19 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
 from scripts import cache_publication, install_plugin, installer_observation
 from scripts.cache_types import CacheIdentity, CachePublication
-from scripts.codex_compatibility import CompatibilityResult
 from scripts.config_publication import write_config_bytes as real_write_config_bytes
-from scripts.hook_trust import TrustedHookState
 from scripts.install_errors import InstallPluginError
 from scripts.install_plugin import install
 from scripts.installer_lock import installer_lock
 from tests.install_plugin_support import (
     CACHE_PUBLICATION_FAILED,
     HOOKS_DISABLED,
+    InstallerCallValue,
     compatibility_fixture,
     publisher,
     source_fixture,
@@ -24,7 +22,11 @@ from tests.install_plugin_support import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
+    from scripts.codex_compatibility import CompatibilityResult
     from scripts.config_metadata import ConfigSnapshot
+    from scripts.hook_trust import TrustedHookState
     from scripts.installer_lock import InstallerLease
 
 pytest_plugins = ("tests.install_plugin_fixtures",)
@@ -44,10 +46,10 @@ def test_unsafe_enabled_prior_is_compare_safely_disabled_without_touching_other_
     _ = config.write_bytes(raw)
     compatibility = compatibility_fixture(home)
 
-    def check(*_args: object, **_kwargs: object) -> CompatibilityResult:
+    def check(*_args: InstallerCallValue, **_kwargs: InstallerCallValue) -> CompatibilityResult:
         return compatibility
 
-    def fail_publish(*_args: object, **_kwargs: object) -> CachePublication:
+    def fail_publish(*_args: InstallerCallValue, **_kwargs: InstallerCallValue) -> CachePublication:
         raise InstallPluginError(CACHE_PUBLICATION_FAILED)
 
     monkeypatch.setattr(install_plugin, "validate_codex_compatibility", check)
@@ -76,7 +78,7 @@ def test_external_writer_conflict_preserves_writer_bytes_then_best_effort_disabl
     compatibility = compatibility_fixture(home)
     raced = False
 
-    def check(*_args: object, **_kwargs: object) -> CompatibilityResult:
+    def check(*_args: InstallerCallValue, **_kwargs: InstallerCallValue) -> CompatibilityResult:
         return compatibility
 
     def race_write(
@@ -118,7 +120,7 @@ def test_failed_upgrade_restores_only_a_fully_validated_prior(
     new_source = source_fixture(tmp_path, "2.0.0", "source-new")
     compatibility = compatibility_fixture(home)
 
-    def check_ok(*_args: object, **_kwargs: object) -> CompatibilityResult:
+    def check_ok(*_args: InstallerCallValue, **_kwargs: InstallerCallValue) -> CompatibilityResult:
         return compatibility
 
     def snapshot(path: Path) -> tuple[CacheIdentity, str]:
@@ -155,7 +157,9 @@ def test_failed_upgrade_restores_only_a_fully_validated_prior(
 
     calls = 0
 
-    def fail_upgrade(*_args: object, **_kwargs: object) -> CompatibilityResult:
+    def fail_upgrade(
+        *_args: InstallerCallValue, **_kwargs: InstallerCallValue
+    ) -> CompatibilityResult:
         nonlocal calls
         calls += 1
         if calls == 2:

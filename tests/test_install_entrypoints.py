@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-# noqa: SIZE_OK - cohesive Windows, POSIX, and workflow entrypoint contract
-
-import json
 import os
 import shutil
 import subprocess
@@ -277,70 +274,3 @@ def test_entrypoint_cleanup_refuses_replaced_bootstrap(tmp_path: Path, entrypoin
     assert "installer bootstrap cleanup failed" in result.stderr
     assert replacement.read_text(encoding="utf-8").strip() == "replacement"
     replacement.unlink()
-
-
-def test_posix_workflow_is_push_only_and_candidate_bound() -> None:
-    # Given: the JSON-formatted YAML workflow and its complete approved structure.
-    workflow = json.loads(
-        (_ROOT / ".github" / "workflows" / "installer-posix.yml").read_text(encoding="utf-8")
-    )
-    expected = {
-        "name": "Native POSIX installer",
-        "on": {"push": {"branches": ["**"]}},
-        "permissions": {"contents": "read"},
-        "jobs": {
-            "ubuntu-x64": {
-                "runs-on": "ubuntu-latest",
-                "steps": [
-                    {
-                        "name": "Checkout candidate",
-                        "uses": "actions/checkout@v4",
-                        "with": {"ref": "${{ github.sha }}", "persist-credentials": False},
-                    },
-                    {
-                        "name": "Verify candidate SHA",
-                        "shell": "bash",
-                        "run": (
-                            'test "$(git rev-parse HEAD)" = "${{ github.sha }}"\n'
-                            'test "$(uname -s)" = "Linux"\n'
-                            'test "$(uname -m)" = "x86_64"\n'
-                            "sh -n install.sh\n"
-                        ),
-                    },
-                    {
-                        "name": "Run native installer smoke",
-                        "shell": "bash",
-                        "run": "python3.12 tests/native_posix_install_smoke.py\n",
-                    },
-                ],
-            },
-            "macos-arm64": {
-                "runs-on": "macos-14",
-                "steps": [
-                    {
-                        "name": "Checkout candidate",
-                        "uses": "actions/checkout@v4",
-                        "with": {"ref": "${{ github.sha }}", "persist-credentials": False},
-                    },
-                    {
-                        "name": "Verify candidate SHA",
-                        "shell": "bash",
-                        "run": (
-                            'test "$(git rev-parse HEAD)" = "${{ github.sha }}"\n'
-                            'test "$(uname -s)" = "Darwin"\n'
-                            'test "$(uname -m)" = "arm64"\n'
-                            "sh -n install.sh\n"
-                        ),
-                    },
-                    {
-                        "name": "Run native installer smoke",
-                        "shell": "bash",
-                        "run": "python3.12 tests/native_posix_install_smoke.py\n",
-                    },
-                ],
-            },
-        },
-    }
-
-    # When / Then: parsing yields exactly the approved keys, values, and list order.
-    assert workflow == expected

@@ -3,6 +3,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$env:PYTHONDONTWRITEBYTECODE = '1'
 $env:PYTHONUTF8 = '1'
 $PythonArgs = [string[]] $args
 $Version = '3.12.13+20260510'
@@ -17,10 +18,19 @@ $PluginRoot = Split-Path -Parent $PSScriptRoot
 $Archive = Join-Path $PluginRoot "runtime\archives\cpython-$Version-windows-x64.tar.gz"
 $Target = Join-Path $DataRoot "portable-python\$Version\windows-x64\python"
 $Python = Join-Path $Target 'python.exe'
+$PreparedTarget = Join-Path $DataRoot "portable-python-$Version"
+$PreparedPython = Join-Path $PreparedTarget 'python.exe'
 $LockPath = Join-Path $DataRoot '.portable-python.lock'
 $Stage = Join-Path $DataRoot ('.portable-python-stage-' + [guid]::NewGuid().ToString('N'))
 
-New-Item -ItemType Directory -Force -Path $DataRoot | Out-Null
+if ((Test-Path -LiteralPath $PreparedTarget) -and -not (Test-Path -LiteralPath $PreparedPython -PathType Leaf)) {
+    throw "portable runtime is incomplete: $PreparedTarget"
+}
+if (Test-Path -LiteralPath $PreparedPython -PathType Leaf) {
+    $Python = $PreparedPython
+}
+else {
+    New-Item -ItemType Directory -Force -Path $DataRoot | Out-Null
 $Lock = $null
 $Deadline = [DateTime]::UtcNow.AddSeconds(55)
 while ($null -eq $Lock) {
@@ -77,6 +87,7 @@ finally {
     }
     $Lock.Dispose()
 }
+}
 
 if ($ForwardStdin) {
     if ($PythonArgs.Count -ne 1 -or $PythonArgs[0].Contains('"')) {
@@ -91,7 +102,7 @@ if ($ForwardStdin) {
     }
     $StartInfo = [Diagnostics.ProcessStartInfo]::new()
     $StartInfo.FileName = $Python
-    $StartInfo.Arguments = '"' + $PythonArgs[0] + '"'
+    $StartInfo.Arguments = '-B "' + $PythonArgs[0] + '"'
     $StartInfo.UseShellExecute = $false
     $StartInfo.CreateNoWindow = $true
     $StartInfo.RedirectStandardInput = $true
@@ -126,5 +137,5 @@ if ($ForwardStdin) {
     exit $ChildExitCode
 }
 
-& $Python @PythonArgs
+& $Python -B @PythonArgs
 exit $LASTEXITCODE

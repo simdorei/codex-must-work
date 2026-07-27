@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts.goal_control import GoalControlError
 from scripts.manager_lease import ManagerLease, acquire_manager_lease, release_manager_lease
 from scripts.setup import ActivationError, enable_session
 from scripts.setup_cli import main
@@ -54,7 +55,6 @@ def ready_manager(
         "--message-preset",
         "cleanup",
         "--auto-restart",
-        "--goal-companion",
         "--permission-mode",
         "bypassPermissions",
     ]
@@ -79,7 +79,7 @@ def ready_manager(
 def test_enable_session_refuses_existing_runtime_without_mutation(tmp_path: Path) -> None:
     # Given: an existing managed runtime contains resident-manager progress.
     root = tmp_path / "codex-home" / "codex-must-work"
-    activation = request(root, observe_only=False, goal_companion=True)
+    activation = request(root, observe_only=False, goal_companion=False)
     _ = enable_session(root, activation, managed_report())
     path = runtime_path(root, SESSION_ID)
     values = dict(load_state(root, path).values)
@@ -102,6 +102,24 @@ def test_enable_session_refuses_existing_runtime_without_mutation(tmp_path: Path
     # Then: neither configuration nor resident progress is overwritten.
     assert config_path(root).read_bytes() == config_before
     assert path.read_bytes() == runtime_before
+
+
+def test_goal_companion_rejected_before_runtime_or_config_mutation(tmp_path: Path) -> None:
+    # Given: no CMW runtime or configuration exists for this session.
+    root = tmp_path / "codex-home" / "codex-must-work"
+    activation = request(root, observe_only=False, goal_companion=True)
+    path = runtime_path(root, SESSION_ID)
+
+    # When: the unsupported Goal companion mode is requested.
+    with pytest.raises(
+        GoalControlError,
+        match="goal_companion_atomic_update_unavailable",
+    ):
+        _ = enable_session(root, activation, managed_report())
+
+    # Then: policy rejection occurs before any runtime or configuration mutation.
+    assert not path.exists()
+    assert not config_path(root).exists()
 
 
 def test_cli_repeated_auto_restart_reuses_ready_manager(

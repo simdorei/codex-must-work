@@ -1,40 +1,25 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
 
 from scripts import codex_compatibility
-from scripts import codex_compatibility_policy as policy_module
 from scripts.codex_compatibility import (
     ALLOWED_CODEX_RELEASES,
     CompatibilityResult,
     validate_codex_compatibility,
 )
-from scripts.codex_compatibility_policy import (
-    MANAGED_SOURCE_KIND_ORDER,
-    MANAGED_SOURCE_KINDS_BY_RELEASE,
-    MANAGED_SOURCE_ORDER,
-    MANAGED_SOURCE_SEARCH_BY_RELEASE,
-    PolicySourceSpec,
-)
 from scripts.install_errors import InstallPluginError
 from tests.codex_compatibility_support import (
     ALLOWED,
-    binary_names,
     bundle_fixture,
-    cloud_cache,
     fake_commands,
-    policy_spec_provider,
     source_fixture,
 )
 
-if TYPE_CHECKING:
-    from collections.abc import Callable
 
 def test_allowed_release_contract_is_source_pinned() -> None:
     assert ALLOWED_CODEX_RELEASES == ALLOWED
@@ -62,10 +47,25 @@ def test_supported_runtime_preflight_is_direct_complete_and_path_independent(
     assert all(call[2]["CODEX_HOME"] != str(source) for call in calls)
 
 
+def test_current_desktop_runtime_release_is_supported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    runtime = bundle_fixture(home, "plugins/.plugin-appserver")
+    source = source_fixture(tmp_path)
+    _ = fake_commands(monkeypatch, version="0.146.0-alpha.3.1")
+
+    result = validate_codex_compatibility(home.resolve(), source, require_plugins=True)
+
+    assert result.selected_executable == runtime
+    assert [item.version for item in result.runtimes] == ["0.146.0-alpha.3.1"]
+
+
 @pytest.mark.parametrize(
     ("version", "reason"),
     [
-        ("0.146.0", "unsupported_codex_hook_contract"),
+        ("0.147.0", "unsupported_codex_hook_contract"),
         ("malformed", "unsupported_codex_hook_contract"),
     ],
 )
@@ -138,7 +138,7 @@ def test_mixed_supported_and_unsupported_runtime_candidates_fail_closed(
     ) -> subprocess.CompletedProcess[str]:
         _ = env, cwd
         if argv[1:] == ("--version",):
-            version = "0.146.0" if Path(argv[0]) == unsupported else "0.144.0"
+            version = "0.147.0" if Path(argv[0]) == unsupported else "0.144.0"
             return subprocess.CompletedProcess(argv, 0, f"codex-cli {version}\n", "")
         if argv[1:] == ("features", "list"):
             return subprocess.CompletedProcess(

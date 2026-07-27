@@ -69,7 +69,8 @@ MANAGED_SOURCE_ORDER: Final = (
     "mdm_requirements",
 )
 MANAGED_SOURCE_SEARCH_BY_RELEASE: Final = dict.fromkeys(
-    ("0.144.0-alpha.4", "0.144.0", "0.145.0-alpha.18"), MANAGED_SOURCE_ORDER
+    ("0.144.0-alpha.4", "0.144.0", "0.145.0-alpha.18", "0.146.0-alpha.3.1"),
+    MANAGED_SOURCE_ORDER,
 )
 MANAGED_SOURCE_KIND_ORDER: Final = (
     ("system_config", "System"),
@@ -81,7 +82,7 @@ MANAGED_SOURCE_KIND_ORDER: Final = (
     ("mdm_requirements", "MdmManagedPreferences"),
 )
 MANAGED_SOURCE_KINDS_BY_RELEASE: Final[dict[str, tuple[tuple[str, str], ...]]] = dict.fromkeys(
-    ("0.144.0-alpha.4", "0.144.0", "0.145.0-alpha.18"),
+    ("0.144.0-alpha.4", "0.144.0", "0.145.0-alpha.18", "0.146.0-alpha.3.1"),
     MANAGED_SOURCE_KIND_ORDER,
 )
 
@@ -109,9 +110,7 @@ def policy_source_specs(codex_home: Path, version: str) -> tuple[PolicySourceSpe
             system / "requirements.toml",
             source_kind="SystemRequirementsToml",
         ),
-        PolicySourceSpec(
-            "cloud_config", cloud, "cloud_config", source_kind="EnterpriseManaged"
-        ),
+        PolicySourceSpec("cloud_config", cloud, "cloud_config", source_kind="EnterpriseManaged"),
         PolicySourceSpec(
             "cloud_requirements",
             cloud,
@@ -151,7 +150,7 @@ def inspect_managed_policy(codex_home: Path, version: str) -> tuple[PolicySnapsh
     if tuple((spec.name, spec.source_kind) for spec in specs) != expected_kinds:
         _fail(_UNVERIFIABLE)
     snapshots = tuple(_inspect(spec) for spec in specs)
-    seen: dict[str, tuple[object, str | None]] = {}
+    seen: dict[str, tuple[FileIdentity | None, str | None]] = {}
     for snapshot in snapshots:
         if snapshot.present and snapshot.location is not None:
             current = snapshot.identity, snapshot.digest

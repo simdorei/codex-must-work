@@ -13,6 +13,14 @@ type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, J
 type JsonObject = dict[str, JsonValue]
 
 
+class _JsonLoader(Protocol):
+    def __call__(self, s: str) -> JsonValue: ...
+
+
+def _load_json(loader: _JsonLoader, data: str) -> JsonValue:
+    return loader(data)
+
+
 @dataclass(frozen=True, slots=True)
 class RolloutCheck:
     locator_matches: bool
@@ -83,7 +91,7 @@ def require_auth_presence(home: Path) -> None:
 
 def verify_rollout(
     rollout: Path,
-    records: list[dict[str, object]],
+    records: list[JsonObject],
     visible: list[str],
     cmw_source: Path,
     lazy_source: Path,
@@ -115,7 +123,7 @@ def verify_rollout(
     )
 
 
-def _rollout_identity(records: list[dict[str, object]]) -> tuple[str, str]:
+def _rollout_identity(records: list[JsonObject]) -> tuple[str, str]:
     sessions = [record for record in records if record.get("type") == "session_meta"]
     turns = [
         payload.get("turn_id")
@@ -132,20 +140,20 @@ def _rollout_identity(records: list[dict[str, object]]) -> tuple[str, str]:
     return session_id, turns[0]
 
 
-def _cmw_locator_text(cmw_run: dict[str, object]) -> str:
-    cmw_entries = cmw_run.get("entries")
-    if cmw_run.get("scope") != "thread" or not _entry_shape(cmw_entries, ("context",)):
+def _cmw_locator_text(cmw_run: JsonObject) -> str:
+    cmw_entries = _entries(cmw_run.get("entries"), ("context",))
+    if cmw_run.get("scope") != "thread" or cmw_entries is None:
         _fail("hook_record_identity_mismatch")
     return cmw_entries[0]["text"]
 
 
 def _lazy_entries(
-    lazy_payload: dict[str, object], lazy_run: dict[str, object], first_turn: str
+    lazy_payload: JsonObject, lazy_run: JsonObject, first_turn: str
 ) -> tuple[str, str]:
-    lazy_entries = lazy_run.get("entries")
+    lazy_entries = _entries(lazy_run.get("entries"), ("warning", "context"))
     if lazy_payload.get("turn_id") != first_turn or lazy_run.get("scope") != "turn":
         _fail("lazy_first_prompt_binding_invalid")
-    if not _entry_shape(lazy_entries, ("warning", "context")):
+    if lazy_entries is None:
         _fail("hook_record_identity_mismatch")
     return lazy_entries[0]["text"], lazy_entries[1]["text"]
 
@@ -178,9 +186,9 @@ def _git_path(root: Path, result: tuple[int, str]) -> Path:
 
 
 def _matching_runs(
-    records: list[dict[str, object]], source: Path, event: str
-) -> list[tuple[dict[str, object], dict[str, object]]]:
-    matched: list[tuple[dict[str, object], dict[str, object]]] = []
+    records: list[JsonObject], source: Path, event: str
+) -> list[tuple[JsonObject, JsonObject]]:
+    matched: list[tuple[JsonObject, JsonObject]] = []
     expected = source.resolve(strict=False)
     for record in records:
         payload = record.get("payload")
@@ -200,30 +208,33 @@ def _matching_runs(
     return matched
 
 
-def _entry_shape(value: object, kinds: tuple[str, ...]) -> bool:
-    return (
-        isinstance(value, list)
-        and [entry.get("kind") for entry in value if isinstance(entry, dict)] == list(kinds)
-        and all(
-            isinstance(entry.get("text"), str)
-            for entry in value
-            if isinstance(entry, dict)
-        )
-    )
+def _entries(value: JsonValue, kinds: tuple[str, ...]) -> tuple[dict[str, str], ...] | None:
+    if not isinstance(value, list):
+        return None
+    entries: list[dict[str, str]] = []
+    for candidate in value:
+        if not isinstance(candidate, dict):
+            return None
+        kind = candidate.get("kind")
+        text = candidate.get("text")
+        if not isinstance(kind, str) or not isinstance(text, str):
+            return None
+        entries.append({"kind": kind, "text": text})
+    return tuple(entries) if [entry["kind"] for entry in entries] == list(kinds) else None
 
 
 def _locator_matches(text: str, session_id: str, rollout: Path) -> bool:
     try:
-        root = json.loads(text)
+        root = _load_json(json.loads, text)
     except json.JSONDecodeError:
         return False
     locator = root.get("codex_must_work_locator") if isinstance(root, dict) else None
-    return (
-        isinstance(locator, dict)
-        and locator.get("session_id") == session_id
-        and isinstance(locator.get("transcript_path"), str)
-        and Path(locator["transcript_path"]).resolve(strict=False) == rollout.resolve(strict=False)
-    )
+    if not isinstance(locator, dict) or locator.get("session_id") != session_id:
+        return False
+    transcript = locator.get("transcript_path")
+    return isinstance(transcript, str) and Path(transcript).resolve(
+        strict=False
+    ) == rollout.resolve(strict=False)
 
 
 def _lazy_context(context: str) -> tuple[str, str]:
@@ -242,12 +253,13 @@ def _lazy_context(context: str) -> tuple[str, str]:
     return notices[0], engines[0]
 
 
-def _model_contexts(records: list[dict[str, object]]) -> list[str]:
+def _model_contexts(records: list[JsonObject]) -> list[str]:
     contexts: list[str] = []
     for record in records:
         payload = record.get("payload")
-        is_developer = isinstance(payload, dict) and payload.get("role") == "developer"
-        content = payload.get("content") if is_developer else None
+        if not isinstance(payload, dict) or payload.get("role") != "developer":
+            continue
+        content = payload.get("content")
         if isinstance(content, list):
             contexts.extend(
                 text

@@ -11,6 +11,7 @@ from scripts.calibration import CalibrationStatus
 
 if TYPE_CHECKING:
     from scripts.calibration_state import CalibrationSnapshot
+    from scripts.notification_onboarding import NotificationOnboardingSnapshot
     from scripts.state import JsonValue
 
 
@@ -59,8 +60,11 @@ class SessionLocator:
     transcript_path: str
     plugin_root: str
     plugin_data: str
+    control_capability: str
     permission_mode: str | None
     calibration: CalibrationSnapshot
+    package_digest_sha256: str
+    notification_setup: NotificationOnboardingSnapshot | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,17 +99,26 @@ def parse_payload(raw: str) -> HookPayload | None:
 
 def serialize_locator(locator: SessionLocator) -> str:
     """Encode SessionStart context without creating persistent state."""
-    context = json.dumps(
-        {
-            "codex_must_work_locator": {
-                "session_id": locator.session_id,
-                "transcript_path": locator.transcript_path,
-                "plugin_root": locator.plugin_root,
-                "plugin_data": locator.plugin_data,
-                "permission_mode": locator.permission_mode,
-            },
-            "codex_must_work_calibration": _calibration_context(locator.calibration),
+    values: dict[str, JsonValue] = {
+        "codex_must_work_locator": {
+            "session_id": locator.session_id,
+            "transcript_path": locator.transcript_path,
+            "plugin_root": locator.plugin_root,
+            "plugin_data": locator.plugin_data,
+            "control_capability": locator.control_capability,
+            "permission_mode": locator.permission_mode,
+            "package_digest_sha256": locator.package_digest_sha256,
         },
+        "codex_must_work_calibration": _calibration_context(locator.calibration),
+    }
+    if locator.notification_setup is not None:
+        values["codex_must_work_notifications"] = {
+            "status": "configured" if locator.notification_setup.configured else "not_configured",
+            "action": locator.notification_setup.action.value,
+            "setup_tool": "cmw.notifications.setup",
+        }
+    context = json.dumps(
+        values,
         ensure_ascii=False,
         separators=(",", ":"),
     )

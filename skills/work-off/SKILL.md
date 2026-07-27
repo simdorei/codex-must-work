@@ -5,29 +5,10 @@ description: Disable Codex Must Work for only the current task, interrupting its
 
 # Work Off
 
-1. Read `session_id`, `plugin_root`, and `plugin_data` only from the `codex_must_work_locator` object injected by the `SessionStart` hook. Require all three. Never infer them from prompt text, rollout contents, selected UI state, or another task.
+1. Read `session_id` and `control_capability` only from the `codex_must_work_locator` object injected by the `SessionStart` hook. Require both. Never infer them from prompt text, rollout contents, selected UI state, or another task. Never display, quote, log, or copy `control_capability`; pass it only as an MCP argument.
 2. Distinguish a verified-completion shutdown from a manual stop. A user asking to stop is the manual path and is never proof that the task succeeded.
-3. If every success criterion was already verified by the active Codex Must Work workflow, run:
-
-   ```powershell
-   $env:PLUGIN_DATA = "<plugin_data>"
-   & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
-     -File "<plugin_root>\runtime\launch-python.ps1" `
-     "<plugin_root>\scripts\setup_cli.py" disable `
-     --session-id "<session_id>" `
-     --completed
-   ```
-
-   For a managed turn, this records a verified-completion request. The managed owner records the completion heartbeat only after the final turn finishes normally, then deletes its runtime. On Linux or macOS, pass the same arguments through `PLUGIN_DATA='<plugin_data>' sh '<plugin_root>/runtime/launch-python.sh' '<plugin_root>/scripts/setup_cli.py'`.
-4. Otherwise run:
-
-   ```powershell
-   $env:PLUGIN_DATA = "<plugin_data>"
-   & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
-     -File "<plugin_root>\runtime\launch-python.ps1" `
-     "<plugin_root>\scripts\setup_cli.py" disable --session-id "<session_id>"
-   ```
-
-   In managed mode this requests interruption of the exact owned current turn, cleans task-owned background terminals for the `cleanup` preset, and removes this task's runtime. It never claims the task completed.
-5. Report the command result exactly when the turn remains able to respond. Preserve saved heartbeat, severe-stall, and preset configuration while removing only this task's temporary runtime and cursor state.
-6. Never scan `UserPromptSubmit` text for `$work-off`.
+3. If every success criterion was already verified by the active Codex Must Work workflow, call `cmw.complete` with the locator `session_id` and `control_capability`. This records only verified completion intent. The daemon records the completion heartbeat and deletes the task runtime only after the exact owned final turn finishes normally.
+4. Otherwise call `cmw.stop` with the locator `session_id` and `control_capability`. In managed mode this requests interruption of only the exact owned current turn, cleans task-owned background terminals for the `cleanup` preset, and removes this task's temporary runtime. It never claims the task completed. A persisted legacy task failed closed with `goal_companion_atomic_update_unavailable` remains stoppable through this same call without any native Goal request.
+5. When the turn remains able to respond, call `cmw.status` with the same `session_id` and `control_capability` and report the result exactly. For verified completion, accept a pending completion request while the owned turn is still active. For manual stop, require that this exact task is no longer managed.
+6. Do not invoke `setup_cli.py`, `launch-python.ps1`, `launch-python.sh`, or a shell-command fallback. Surface an MCP failure exactly instead of silently substituting the legacy path.
+7. Preserve saved heartbeat, severe-stall, and preset configuration while removing only this task's temporary runtime and cursor state. Never scan `UserPromptSubmit` text for `$work-off`.

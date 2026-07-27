@@ -10,7 +10,8 @@ from scripts.diagnostics import (
     DiagnosticCode,
     DiagnosticEvent,
     MonitorState,
-    append_diagnostic,
+    append_diagnostic_once,
+    diagnostic_event_exists,
 )
 
 if TYPE_CHECKING:
@@ -38,7 +39,16 @@ def append_target_diagnostic(
     diagnostic: TargetDiagnostic,
 ) -> None:
     """Hash opaque identifiers before appending a diagnostic."""
-    append_diagnostic(
+    _ = append_target_diagnostic_once(root, target, diagnostic)
+
+
+def append_target_diagnostic_once(
+    root: Path,
+    target: RuntimeTarget,
+    diagnostic: TargetDiagnostic,
+) -> bool:
+    """Hash identifiers, append a unique event, and report whether it was new."""
+    return append_diagnostic_once(
         root,
         DiagnosticEvent(
             occurred_at=diagnostic.occurred_at,
@@ -60,6 +70,31 @@ def completion_event_id(target: RuntimeTarget) -> str:
     """Return the stable privacy-safe identity for one parent-turn completion."""
     turn_id = "" if target.parent_turn_id is None else target.parent_turn_id
     return _hash(f"watcher_completed\0{target.session_id}\0{turn_id}")
+
+
+def lifecycle_event_id(
+    code: DiagnosticCode,
+    target: RuntimeTarget,
+    monitor: MonitorTarget,
+) -> str:
+    """Return one stable identity for a target's current progress epoch."""
+    turn_id = "" if target.parent_turn_id is None else target.parent_turn_id
+    target_id = "" if monitor.target_id is None else monitor.target_id
+    identity = (
+        f"{code.value}\0{target.session_id}\0{turn_id}\0{target_id}\0"
+        f"{monitor.generation}\0{monitor.progress_epoch}"
+    )
+    return _hash(identity)
+
+
+def lifecycle_event_exists(root: Path, event_id: str) -> bool:
+    """Check one lifecycle identity without exposing raw target identifiers."""
+    return diagnostic_event_exists(root, event_id)
+
+
+def notification_failure_event_id(event_id: str) -> str:
+    """Derive one stable diagnostic identity for a failed remote delivery."""
+    return _hash(f"discord_notification_failed\0{event_id}")
 
 
 def _hash(value: str) -> str:

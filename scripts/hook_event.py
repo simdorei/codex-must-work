@@ -16,8 +16,10 @@ from typing import TYPE_CHECKING, assert_never
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from scripts import installed_generation
 from scripts.calibration_scan import scan_history
 from scripts.calibration_state import CalibrationEnvironment, load_or_calibrate
+from scripts.control_capability import derive_control_capability, load_control_key
 from scripts.hook_payload import (
     HookEvent,
     HookPayload,
@@ -28,6 +30,7 @@ from scripts.hook_payload import (
     serialize_stop_continuation,
 )
 from scripts.hook_state import apply_hook_event, safe_transcript_path
+from scripts.notification_onboarding import claim_notification_onboarding
 from scripts.path_identity import resolve_local_path
 from scripts.private_root import ensure_private_root
 from scripts.state import (
@@ -79,6 +82,9 @@ def _session_locator(
     active_plugin_root = (
         Path(__file__).resolve().parent.parent if plugin_root is None else plugin_root.resolve()
     )
+    generation = installed_generation.require_session_generation(
+        active_root.parent, active_plugin_root
+    )
     calibration = load_or_calibrate(
         CalibrationEnvironment(
             state_root=active_root,
@@ -88,13 +94,20 @@ def _session_locator(
         ),
         _scan_history,
     )
+    resolved_plugin_data = plugin_data.resolve()
     return SessionLocator(
         session_id=payload.session_id,
         transcript_path=str(resolve_local_path(payload.transcript_path)),
         plugin_root=str(active_plugin_root),
-        plugin_data=str(plugin_data.resolve()),
+        plugin_data=str(resolved_plugin_data),
+        control_capability=derive_control_capability(
+            load_control_key(plugin_data, active_root),
+            payload.session_id,
+        ),
         permission_mode=payload.permission_mode,
         calibration=calibration,
+        package_digest_sha256=generation.digest,
+        notification_setup=claim_notification_onboarding(resolved_plugin_data),
     )
 
 

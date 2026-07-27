@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import multiprocessing
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from tests.install_plugin_support import (
     UNSUPPORTED,
@@ -10,7 +10,11 @@ from tests.install_plugin_support import (
     source_fixture,
 )
 
+if TYPE_CHECKING:
+    from pathlib import Path
+
 pytest_plugins = ("tests.install_plugin_fixtures",)
+
 
 def test_two_process_full_installer_serializes_beyond_eleven_seconds(tmp_path: Path) -> None:
     context = multiprocessing.get_context("spawn")

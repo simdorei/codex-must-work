@@ -4,19 +4,27 @@ import hashlib
 import json
 import re
 from pathlib import Path
-from typing import TypedDict, cast
+from typing import Protocol, TypedDict
 
 import pytest
 
 from scripts.cache_semver import higher
 
+type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
+type JsonObject = dict[str, JsonValue]
+
+
+class _JsonLoader(Protocol):
+    def __call__(self, s: str) -> JsonValue: ...
+
+
+def _load_json(loader: _JsonLoader, data: str) -> JsonValue:
+    return loader(data)
+
+
 ROOT = Path(__file__).resolve().parents[1]
 OLD_VERSION = "0.1.0+codex.20260720221156"
-EVENTS = {
-    "SessionStart",
-    "UserPromptSubmit",
-    "Stop",
-}
+EVENTS = {"SessionStart"}
 RELEASES = [
     (
         "0.144.0-alpha.4",
@@ -61,10 +69,11 @@ class _RootParserFixture(TypedDict):
     releases: list[_ReleaseFixture]
 
 
-def _json(relative: str) -> dict[str, object]:
-    value = cast("object", json.loads((ROOT / relative).read_text(encoding="utf-8")))
-    assert isinstance(value, dict)
-    return cast("dict[str, object]", value)
+def _json(relative: str) -> JsonObject:
+    value = _load_json(json.loads, (ROOT / relative).read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        pytest.fail(f"expected JSON object: {relative}")
+    return value
 
 
 def _release_identities(fixture: _RootParserFixture) -> list[tuple[str, str, str, int, str]]:
@@ -82,8 +91,41 @@ def _release_identities(fixture: _RootParserFixture) -> list[tuple[str, str, str
 
 
 def _root_parser_fixture() -> _RootParserFixture:
-    value = cast("object", _json("tests/fixtures/codex-marketplace-root-parser.json"))
-    return cast("_RootParserFixture", value)
+    value = _json("tests/fixtures/codex-marketplace-root-parser.json")
+    source_path = value.get("source_path")
+    releases = value.get("releases")
+    if not isinstance(source_path, str) or not isinstance(releases, list):
+        pytest.fail("root parser fixture shape is invalid")
+    parsed: list[_ReleaseFixture] = []
+    for release in releases:
+        if not isinstance(release, dict):
+            pytest.fail("root parser release shape is invalid")
+        version = release.get("version")
+        commit = release.get("commit")
+        blob_id = release.get("blob_id")
+        blob_size = release.get("blob_size")
+        excerpt_lines = release.get("excerpt_lines")
+        excerpt = release.get("excerpt")
+        if (
+            not isinstance(version, str)
+            or not isinstance(commit, str)
+            or not isinstance(blob_id, str)
+            or not isinstance(blob_size, int)
+            or not isinstance(excerpt_lines, str)
+            or not isinstance(excerpt, str)
+        ):
+            pytest.fail("root parser release fields are invalid")
+        parsed.append(
+            _ReleaseFixture(
+                version=version,
+                commit=commit,
+                blob_id=blob_id,
+                blob_size=blob_size,
+                excerpt_lines=excerpt_lines,
+                excerpt=excerpt,
+            )
+        )
+    return _RootParserFixture(source_path=source_path, releases=parsed)
 
 
 def test_metadata_marketplace_is_the_exact_local_contract() -> None:
@@ -104,23 +146,31 @@ def test_metadata_marketplace_is_the_exact_local_contract() -> None:
     }
 
 
-def test_version_and_manifest_hook_path_define_one_cache_identity() -> None:
+def test_version_and_default_hook_path_define_one_cache_identity() -> None:
     manifest = _json(".codex-plugin/plugin.json")
     version = manifest["version"]
     assert isinstance(version, str)
     assert version != "local"
     assert higher(version, OLD_VERSION)
-    assert manifest["hooks"] == ["./hooks/hooks.json"]
+    assert "hooks" not in manifest
+    assert (ROOT / "hooks" / "hooks.json").is_file()
     expected_cache = f"<CODEX_HOME>/plugins/cache/codex-must-work-local/codex-must-work/{version}"
     assert expected_cache in (ROOT / "README.md").read_text(encoding="utf-8")
 
 
-def test_metadata_hook_manifest_has_exactly_three_lifecycle_events_and_paths() -> None:
+def test_metadata_hook_manifest_has_only_session_start_and_exact_path() -> None:
     manifest = _json("hooks/hooks.json")
-    hooks = cast("dict[str, list[dict[str, list[dict[str, object]]]]]", manifest["hooks"])
+    hooks = manifest.get("hooks")
+    assert isinstance(hooks, dict)
     assert set(hooks) == EVENTS
-    assert all(len(groups) == 1 for groups in hooks.values())
-    assert all(len(groups[0]["hooks"]) == 1 for groups in hooks.values())
+    for groups in hooks.values():
+        assert isinstance(groups, list)
+        assert len(groups) == 1
+        group = groups[0]
+        assert isinstance(group, dict)
+        handlers = group.get("hooks")
+        assert isinstance(handlers, list)
+        assert len(handlers) == 1
 
 
 def test_marketplace_root_fixture_pins_exact_release_blobs_and_excerpts() -> None:
@@ -203,7 +253,7 @@ def test_readme_documents_update_migration_and_metadata_limits() -> None:
         "codex-must-work@simdorei",
         "기존 캐시, 훅 상태, 작업 데이터와 보정 기록은 삭제하지 않습니다",
         "첫 스레드",
-        "자동 적용하지 않습니다",
+        "사용자가 동의하기 전에는 적용하지 않습니다",
         "관리자 권한을 요청하지 않습니다",
         "audit SACL",
         "기존 `[notice]` 표는 바이트 단위로 변경하지 않습니다",

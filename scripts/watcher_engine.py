@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, final
 
 from scripts.activity_epoch import persist_turn_activity
 from scripts.diagnostics import DiagnosticCode
+from scripts.notifications import NotificationSink, NullNotificationSink
 from scripts.silence import (
     RestartGate,
     SilenceState,
@@ -26,10 +27,14 @@ from scripts.watcher_batch import TargetBatch, read_target_batch
 from scripts.watcher_commit import commit_runtime_snapshot
 from scripts.watcher_completion import CompletionClock, complete_target, finish_if_terminal
 from scripts.watcher_context import DetectorKey, TickContext, restart_eligible_target_count
-from scripts.watcher_diagnostics import TargetDiagnostic, append_target_diagnostic
+from scripts.watcher_diagnostics import (
+    TargetDiagnostic,
+    append_target_diagnostic,
+)
 from scripts.watcher_events import TargetEventContext, apply_target_events, parent_completed
 from scripts.watcher_failure import record_rollout_failure
 from scripts.watcher_heartbeat import record_heartbeat
+from scripts.watcher_notifications import WatcherNotificationRecorder
 from scripts.watcher_source import RolloutCorruptError, RolloutRotatedError
 from scripts.watcher_state import (
     advance_target_progress_epoch,
@@ -52,9 +57,16 @@ if TYPE_CHECKING:
 class WatcherEngine:
     """Maintain detector state while a user-level watcher process is alive."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        notification_sink: NotificationSink | None = None,
+    ) -> None:
         """Initialize empty in-memory detector state for one state root."""
         self._root = root
+        sink = notification_sink or NullNotificationSink()
+        self._notification_recorder = WatcherNotificationRecorder(root, sink)
         self._detectors: dict[DetectorKey, SilenceState] = {}
         self._open_calls: dict[DetectorKey, set[str]] = {}
         self._started: set[DetectorKey] = set()
@@ -64,6 +76,15 @@ class WatcherEngine:
     def tick(self, now: float, wall_time: datetime) -> bool:
         """Process one bounded batch and report whether monitoring should continue."""
         context = TickContext(now, wall_time)
+        active = False
+        try:
+            active = self._tick_runtime_files(context)
+        finally:
+            self._notification_recorder.flush()
+        return active
+
+    def _tick_runtime_files(self, context: TickContext) -> bool:
+        """Process current runtime files before remote notification delivery."""
         active = False
         for runtime_file in discover_runtime_files(self._root):
 
@@ -133,11 +154,11 @@ class WatcherEngine:
     ) -> bool:
         if (
             finished := finish_if_terminal(
-                self._root,
                 target,
                 values,
                 self._detectors,
                 CompletionClock(context.now, context.wall_time),
+                self._notification_recorder.record,
             )
         ) is not None:
             return finished
@@ -161,6 +182,11 @@ class WatcherEngine:
             state = self._detectors.get(key, initial_state(now))
             state = rearm_if_restart_cancelled(state, values, now)
             sequence_before_events = state.silence_sequence
+            warned_before_events = self._notification_recorder.warning_was_emitted(
+                target,
+                monitor,
+                state,
+            )
             if key not in self._started and not monitor.terminal:
                 append_target_diagnostic(
                     self._root,
@@ -180,8 +206,14 @@ class WatcherEngine:
                 TargetEventContext(events, now, target.parent_turn_id),
             )
             if state.silence_sequence > sequence_before_events:
-                advance_target_progress_epoch(values, monitor.target_id, target.runtime_file)
+                _ = advance_target_progress_epoch(values, monitor.target_id, target.runtime_file)
                 activity_observed = True
+                if warned_before_events:
+                    self._notification_recorder.record_recovery(
+                        target,
+                        monitor,
+                        context.wall_time,
+                    )
             if event_terminal:
                 _ = mark_target_terminal(values, monitor.target_id, target.runtime_file)
                 activity_observed = True
@@ -205,11 +237,11 @@ class WatcherEngine:
 
         if parent_terminal:
             complete_target(
-                self._root,
                 target,
                 values,
                 self._detectors,
                 CompletionClock(context.now, context.wall_time),
+                self._notification_recorder.record,
             )
             return False
 
@@ -244,13 +276,13 @@ class WatcherEngine:
             queue_restart_request(result.action, target, monitor, values)
             diagnostic = diagnostic_for_action(
                 result.action,
+                target,
                 monitor,
                 result.state,
-                context.now,
-                context.wall_time,
+                context,
             )
             if diagnostic is not None:
-                append_target_diagnostic(self._root, target, diagnostic)
+                self._notification_recorder.record(target, diagnostic)
                 actionable = True
             active = active or not result.state.waits.terminal
         record_heartbeat(

@@ -78,8 +78,5 @@ def _handoff_decision(
             reason_code="unexpected_active_turn",
         )
     if active_turn_id is not None:
-        return ManagerDecision(
-            ManagerAction.FAIL_CLOSED,
-            reason_code="unexpected_active_turn",
-        )
+        return ManagerDecision(ManagerAction.WAIT)
     return ManagerDecision(ManagerAction.START)

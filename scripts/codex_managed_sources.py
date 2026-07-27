@@ -8,7 +8,7 @@ import subprocess
 import sys
 import uuid
 from pathlib import Path
-from typing import Final, Never, Protocol, cast, final
+from typing import Final, Never, Protocol, final
 
 from scripts.install_errors import InstallPluginError
 
@@ -28,8 +28,16 @@ class _Guid(ctypes.Structure):
     )
 
 
+class _CArgument(Protocol):
+    """Mark values accepted by dynamically loaded ctypes functions."""
+
+
 class _Function(Protocol):
-    def __call__(self, *arguments: object) -> int | None: ...
+    def __call__(self, *arguments: _CArgument) -> int | None: ...
+
+
+def _invoke_ctypes(function: _Function, *arguments: _CArgument) -> int | None:
+    return function(*arguments)
 
 
 def platform_name() -> str:
@@ -48,8 +56,8 @@ def windows_program_data() -> Path:
         shell = ctypes.WinDLL("shell32", use_last_error=True)
         known_folder = shell.SHGetKnownFolderPath
         known_folder.restype = ctypes.c_long
-        call = cast("_Function", known_folder)
-        result: int | None = call(
+        result = _invoke_ctypes(
+            known_folder,
             ctypes.byref(guid),
             ctypes.c_uint32(0),
             ctypes.c_void_p(),

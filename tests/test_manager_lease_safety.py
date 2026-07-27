@@ -4,8 +4,12 @@ from pathlib import Path
 import pytest
 
 import scripts.manager_lease as manager_lease_module
-from scripts.manager_lease import acquire_manager_lease, manager_lease_owner
-from scripts.state import UnsafeStatePathError
+from scripts.manager_lease import (
+    acquire_manager_lease,
+    manager_lease_owner,
+    release_manager_lease,
+)
+from scripts.state import StateDocument, UnsafeStatePathError, load_state, runtime_path, save_state
 
 
 def test_manager_lease_rejects_final_symlink_without_touching_target(tmp_path: Path) -> None:
@@ -105,3 +109,70 @@ def test_manager_lease_probe_rejects_parent_identity_change(
     # When/Then: the probe fails closed instead of trusting the raced path.
     with pytest.raises(UnsafeStatePathError):
         _ = manager_lease_owner(root, runtime_name)
+
+
+def test_recovery_lease_claim_advances_only_the_expected_identity(tmp_path: Path) -> None:
+    # Given: one persisted activation generation and its exact public identities.
+    root = tmp_path / "root"
+    session_id = "session-1"
+    path = runtime_path(root, session_id)
+    save_state(
+        root,
+        path,
+        StateDocument(
+            values={
+                "session_id": session_id,
+                "transcript_path": "sessions/rollout.jsonl",
+                "revision": 7,
+            }
+        ),
+    )
+    expected = manager_lease_module.RecoveryLeaseIdentity(
+        7,
+        session_id,
+        "sessions/rollout.jsonl",
+    )
+
+    # When: the first claimant wins, then a stale claimant retries after release.
+    claim = manager_lease_module.acquire_recovery_manager_lease(root, path.name, expected)
+    assert claim is not None
+    release_manager_lease(claim.lease)
+    winner_bytes = path.read_bytes()
+    stale = manager_lease_module.acquire_recovery_manager_lease(root, path.name, expected)
+
+    # Then: only the winner advances the generation and the loser writes zero bytes.
+    assert stale is None
+    assert load_state(root, path).values["revision"] == 8
+    assert path.read_bytes() == winner_bytes
+
+
+def test_recovery_lease_rejects_transcript_swap_without_state_write(tmp_path: Path) -> None:
+    # Given: discovery captured one transcript identity before another activation replaced it.
+    root = tmp_path / "root"
+    session_id = "session-1"
+    path = runtime_path(root, session_id)
+    expected = manager_lease_module.RecoveryLeaseIdentity(
+        7,
+        session_id,
+        "sessions/original.jsonl",
+    )
+    save_state(
+        root,
+        path,
+        StateDocument(
+            values={
+                "session_id": session_id,
+                "transcript_path": "sessions/replacement.jsonl",
+                "revision": 7,
+            }
+        ),
+    )
+    before = path.read_bytes()
+
+    # When: stale recovery acquires the OS lease and rereads the replaced state.
+    claim = manager_lease_module.acquire_recovery_manager_lease(root, path.name, expected)
+
+    # Then: identity mismatch releases the lease and writes no runtime bytes.
+    assert claim is None
+    assert path.read_bytes() == before
+    assert manager_lease_owner(root, path.name) is None

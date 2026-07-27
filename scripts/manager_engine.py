@@ -1,14 +1,24 @@
 """Drive same-thread handoff, exact interrupt, and replacement turns."""
+# noqa: SIZE_OK  -- one state machine owns one manager tick's exact turn transitions
 
 from __future__ import annotations
 
+import sys
+import time
 from typing import TYPE_CHECKING, assert_never, final
 
 from scripts.goal_control import GoalControlError
+from scripts.goal_policy import enforce_goal_companion_policy
 from scripts.goal_turn_source import require_native_goal_turn
 from scripts.manager_callbacks import ManagerCallbacks
 from scripts.manager_decision import ManagerAction, decide_manager_action
-from scripts.manager_goal import GoalGuard, fence_goal_handoff, require_goal_guard
+from scripts.manager_failure import record_manager_failure
+from scripts.manager_goal import (
+    GoalGuard,
+    fence_goal_handoff,
+    persisted_goal_guard,
+    require_goal_guard,
+)
 from scripts.manager_interrupt import InterruptController
 from scripts.manager_messages import continuation_prompt, result_turn_id
 from scripts.manager_outcome import resolve_turn_outcome
@@ -16,7 +26,8 @@ from scripts.manager_runtime import (
     ManagerRuntime,
     load_manager_runtime,
     mark_manager_ready,
-    record_manager_failure,
+    mark_pending_turn_timed_out,
+    record_pending_turn,
     record_turn_started,
 )
 from scripts.manager_shutdown import handle_shutdown
@@ -29,6 +40,7 @@ if TYPE_CHECKING:
     from scripts.app_server_protocol import ManagedAppServer
 
 _GOAL_IDENTITY_CHANGED = "goal_identity_changed"
+_PENDING_RECONCILIATION_GRACE_SECONDS = 60.0
 
 
 @final
@@ -57,15 +69,16 @@ class ManagerEngine:
 
     def initialize(self) -> None:
         """Initialize app-server before publishing manager readiness."""
-        runtime = self._runtime()
+        runtime = load_manager_runtime(self._root, self._runtime_name)
         if runtime is None:
             return
+        enforce_goal_companion_policy(requested=runtime.view.goal_companion)
         initialized = False
         try:
             self._client.start()
             if runtime.view.goal_companion:
                 self._load_thread(runtime)
-                self._goal_guard = GoalGuard(self._client, runtime.session_id)
+                self._goal_guard = persisted_goal_guard(self._client, self._root, runtime)
                 self._goal_guard.initialize()
             mark_manager_ready(self._root, runtime.runtime_file, self._pid)
             initialized = True
@@ -77,7 +90,7 @@ class ManagerEngine:
         """Restore the captured Goal's original active scheduling on exit."""
         if self._goal_guard is None:
             return
-        runtime = self._runtime()
+        runtime = load_manager_runtime(self._root, self._runtime_name)
         if (
             runtime is not None
             and runtime.view.goal_companion
@@ -93,7 +106,7 @@ class ManagerEngine:
 
     def tick(self) -> bool:
         """Advance one ownership, interruption, or restart transition."""
-        runtime = self._runtime()
+        runtime = load_manager_runtime(self._root, self._runtime_name)
         if runtime is None:
             return False
         return self._tick_runtime(runtime)
@@ -101,42 +114,43 @@ class ManagerEngine:
     def _tick_runtime(self, runtime: ManagerRuntime) -> bool:
         try:
             if self._client.pending_server_request is not None:
-                return self._fail(runtime, "server_request_unhandled")
-            owned_turn = runtime.view.managed_turn_id
-            outcome = None if owned_turn is None else self._client.turn_outcome(owned_turn)
-            if owned_turn is not None and outcome is not None:
+                keep_running = self._fail(runtime, "server_request_unhandled")
+            elif runtime.pending_turn_id is not None:
+                keep_running = self._reconcile_pending_turn(runtime)
+            elif (owned_turn := runtime.view.managed_turn_id) is not None and (
+                outcome := self._client.turn_outcome(owned_turn)
+            ) is not None:
                 resolution = resolve_turn_outcome(
                     self._root, runtime, self._goal_guard, owned_turn, outcome
                 )
                 if resolution.failure_reason is not None:
-                    return self._fail(runtime, resolution.failure_reason)
-                self._restart_prompt_pending = resolution.restart_prompt_pending
-                return resolution.keep_running
-            if runtime.shutdown_requested:
+                    keep_running = self._fail(runtime, resolution.failure_reason)
+                else:
+                    self._restart_prompt_pending = resolution.restart_prompt_pending
+                    keep_running = resolution.keep_running
+            elif runtime.shutdown_requested:
+                owned_turn = runtime.view.managed_turn_id
                 if owned_turn is None:
                     self.close()
-                return handle_shutdown(
+                keep_running = handle_shutdown(
                     self._root,
                     runtime,
                     self._client,
                     self._goal_guard,
                     self._fail,
                 )
-            return self._execute_decision(runtime)
+            else:
+                keep_running = self._execute_decision(runtime)
         except GoalControlError as error:
             if error.reason_code == "goal_complete":
                 disable_session(self._root, runtime.session_id)
                 keep_running = False
             else:
                 keep_running = self._fail(runtime, error.reason_code)
-            return keep_running
+        return keep_running
 
     def _execute_decision(self, runtime: ManagerRuntime) -> bool:
-        active_turn = self._client.active_turn(runtime.session_id)
-        decision = decide_manager_action(
-            runtime.view,
-            active_turn,
-        )
+        decision = decide_manager_action(runtime.view, self._client.active_turn(runtime.session_id))
         match decision.action:
             case ManagerAction.START:
                 keep_running = self._start_turn(runtime)
@@ -180,11 +194,69 @@ class ManagerEngine:
             timeout_seconds=12.0,
         )
         turn_id = result_turn_id(result)
-        if turn_id is None or not self._client.wait_turn_started(runtime.session_id, turn_id):
+        if turn_id is None:
             return self._fail(runtime, "start_timeout")
+        self._persist_accepted_turn(runtime, turn_id)
+        if not self._client.wait_turn_started(runtime.session_id, turn_id):
+            mark_pending_turn_timed_out(
+                self._root,
+                runtime.runtime_file,
+                turn_id,
+                time.monotonic(),
+            )
+            return True
         self._record_turn_started(runtime, turn_id)
         self._restart_prompt_pending = False
         return True
+
+    def _reconcile_pending_turn(self, runtime: ManagerRuntime) -> bool:
+        turn_id = runtime.pending_turn_id
+        if turn_id is None:
+            return True
+        timed_out_at = runtime.pending_turn_timed_out_at
+        if (
+            timed_out_at is not None
+            and time.monotonic() - timed_out_at > _PENDING_RECONCILIATION_GRACE_SECONDS
+        ):
+            self._interrupts.expire_pending(runtime, turn_id)
+            return self._fail(runtime, "start_timeout")
+        if (
+            self._client.active_turn(runtime.session_id) == turn_id
+            or self._client.turn_outcome(turn_id) is not None
+        ):
+            self._record_turn_started(runtime, turn_id)
+            self._restart_prompt_pending = False
+            return True
+        return True
+
+    def _persist_accepted_turn(self, runtime: ManagerRuntime, turn_id: str) -> None:
+        """Persist ownership or interrupt an accepted turn without masking cancellation."""
+        try:
+            record_pending_turn(self._root, runtime.runtime_file, turn_id)
+        finally:
+            original = sys.exception()
+            if original is not None:
+                traceback = original.__traceback__
+                try:
+                    self._recover_accepted_turn(runtime, turn_id)
+                finally:
+                    raise original.with_traceback(traceback)
+
+    def _recover_accepted_turn(self, runtime: ManagerRuntime, turn_id: str) -> None:
+        """Keep a durable exact owner; otherwise interrupt the accepted turn once."""
+        durable_owner = False
+        try:
+            persisted = load_manager_runtime(self._root, self._runtime_name)
+            durable_owner = persisted is not None and (
+                turn_id
+                in {
+                    persisted.pending_turn_id,
+                    persisted.view.managed_turn_id,
+                }
+            )
+        finally:
+            if not durable_owner:
+                self._interrupts.interrupt_unowned_accepted(runtime, turn_id)
 
     def _resume_goal(self, runtime: ManagerRuntime) -> bool:
         guard = require_goal_guard(self._goal_guard)
@@ -266,6 +338,3 @@ class ManagerEngine:
         self.close()
         record_manager_failure(self._root, runtime.runtime_file, reason_code)
         return False
-
-    def _runtime(self) -> ManagerRuntime | None:
-        return load_manager_runtime(self._root, self._runtime_name)

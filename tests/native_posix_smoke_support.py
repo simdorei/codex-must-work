@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import os
 import shutil
 import stat
@@ -9,7 +8,7 @@ import tempfile
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Final, Literal, NewType, final, override
+from typing import Final, NewType, final, override
 
 CheckName = NewType("CheckName", str)
 
@@ -54,19 +53,6 @@ if [ "$#" -eq 6 ] && [ "$1" = "plugin" ] && [ "$2" = "list" ] &&
 fi
 printf '%s\\n' 'unexpected fake Codex command' >&2
 exit 64
-"""
-
-_AUDIT_SITE: Final = """import os
-from pathlib import Path
-import subprocess
-
-Path(os.environ["CMW_NATIVE_SMOKE_AUDIT_LOADED"]).touch()
-
-def blocked_popen(*args, **kwargs):
-    Path(os.environ["CMW_NATIVE_SMOKE_CHILD_SENTINEL"]).touch()
-    raise RuntimeError("child launch blocked by native smoke")
-
-subprocess.Popen = blocked_popen
 """
 
 _TOOL_NAMES: Final = "awk basename chmod dirname grep mkdir mktemp mv rm sh sleep tar uname"
@@ -129,18 +115,6 @@ class NativeLayout:
         if delay_marker is not None:
             env["CMW_NATIVE_SMOKE_DELAY_ONCE"] = str(delay_marker)
         return env
-
-
-@dataclass(frozen=True, slots=True)
-class TreeEntry:
-    relative: str
-    kind: Literal["directory", "file", "symlink"]
-    mode: int
-    device: int
-    inode: int
-    size: int
-    modified_ns: int
-    digest: str | None
 
 
 def create_layout(source_root: Path) -> tuple[tempfile.TemporaryDirectory[str], NativeLayout]:
@@ -231,34 +205,6 @@ def stop_process(process: subprocess.Popen[str]) -> None:
         _ = process.wait(timeout=5)
 
 
-def tree_snapshot(root: Path) -> tuple[TreeEntry, ...]:
-    entries: list[TreeEntry] = []
-    for path in sorted((root, *root.rglob("*")), key=lambda item: item.as_posix().encode()):
-        metadata = path.lstat()
-        kind: Literal["directory", "file", "symlink"]
-        digest: str | None = None
-        if stat.S_ISDIR(metadata.st_mode):
-            kind = "directory"
-        elif stat.S_ISREG(metadata.st_mode):
-            kind = "file"
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        else:
-            kind = "symlink"
-        entries.append(
-            TreeEntry(
-                "." if path == root else path.relative_to(root).as_posix(),
-                kind,
-                stat.S_IMODE(metadata.st_mode),
-                metadata.st_dev,
-                metadata.st_ino,
-                metadata.st_size,
-                metadata.st_mtime_ns,
-                digest,
-            )
-        )
-    return tuple(entries)
-
-
 def bootstrap_clean(layout: NativeLayout) -> bool:
     names = (
         "cmw-installer-bootstrap.*",
@@ -266,10 +212,6 @@ def bootstrap_clean(layout: NativeLayout) -> bool:
         ".portable-python-stage.*",
     )
     return not any(True for pattern in names for _ in layout.temporary_root.glob(pattern))
-
-
-def create_audit_site(directory: Path) -> None:
-    _ = (directory / "sitecustomize.py").write_text(_AUDIT_SITE, encoding="utf-8")
 
 
 def _write_executable(path: Path) -> None:

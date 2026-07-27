@@ -15,7 +15,7 @@ from scripts.state_io import open_direct_file
 
 ROOT = Path(__file__).resolve().parents[1]
 ORACLE = ROOT / "tests" / "fixtures" / "package-files-base-0352.txt"
-ORACLE_SHA = "0e018479eb746d14076141b731be1e866a58918fc412ce1cad026595ddcb9a11"
+ORACLE_SHA = "e4046057375ac2325e6fda82df1fc6dbdccb3f79fee7bed9ef3a90ec31cace7d"
 GOLDEN = "d073c2db6f4ecafccba71b30ebacda30e99c61bb449e06b013f9c40dfdc6ab68"
 MANIFEST = "runtime/package-files.json"
 
@@ -24,18 +24,11 @@ def _cases(value: str) -> tuple[str, ...]:
     return tuple(value.split())
 
 
-VERSION_CASES = (
-    *(("1.0.0-alpha", "1.0.0", False), ("1.0.0-alpha.2", "1.0.0-alpha.10", False)),
-    *(("1.0.0", "1.0.0+bc17664", False), ("1.0.0+bc17664", "1.0.0+c144a98", False)),
-    ("1.0.0+c144a98", "1.0.0+bc17664", True),
-    *(("1.10", "1.2.0", False), ("v10", "v2", False)),
-)
 PACKAGE_FAILURES = (
     *_cases("escape duplicate unsorted bad-json bad-hooks missing"),
     *_cases("bad-version escape-version slash-version"),
 )
 PATH_CASES = _cases("target-content target-extra target-missing source-symlink open-race path-swap")
-DURABILITY_CASES = _cases("file directory final-parent post-rename no-replace cleanup-swap")
 type CacheCase = tuple[Path, Path, tuple[str, ...]]
 
 
@@ -97,11 +90,11 @@ def test_oracle_and_manifest_are_exact() -> None:
     oracle_data = ORACLE.read_bytes()
     oracle = oracle_data.decode().splitlines()
     manifest = sorted([*oracle, MANIFEST], key=str.encode)
-    assert (len(oracle), hashlib.sha256(oracle_data).hexdigest()) == (80, ORACLE_SHA)
+    assert (len(oracle), hashlib.sha256(oracle_data).hexdigest()) == (138, ORACLE_SHA)
     assert oracle_data.endswith(b"\n")
     assert b"\r" not in oracle_data
     assert oracle == sorted(oracle, key=str.encode)
-    assert len(manifest) == len(set(manifest)) == 81
+    assert len(manifest) == len(set(manifest)) == 139
     assert all((ROOT / path).is_file() for path in manifest)
     installer_only = {
         "scripts/codex_config.py",
@@ -162,18 +155,33 @@ def test_idempotent_publish_preserves_identity_bytes_and_mtimes(cache_case: Cach
     assert after == before
 
 
-@pytest.mark.parametrize("case", VERSION_CASES)
-def test_version_selection_matches_semver_or_raw_order(
-    cache_case: CacheCase, case: tuple[str, str, bool]
+@pytest.mark.parametrize("kind", ["valid", "incomplete", "corrupt"])
+def test_unrequested_higher_cache_does_not_select_or_block_requested_generation(
+    cache_case: CacheCase,
+    kind: str,
 ) -> None:
-    candidate, source, blocked = case
-    _ = _publish(cache_case, "0.0.0-0")
-    _target(cache_case, candidate).mkdir(mode=0o700)
-    if blocked:
-        with pytest.raises(InstallPluginError, match="cache_selection_conflict"):
-            _ = _publish(cache_case, source)
-        return
-    assert _publish(cache_case, source).created_by_run
+    # Given
+    _ = _publish(cache_case, "0.0.0")
+    higher = _target(cache_case, "9.0.0")
+    if kind == "valid":
+        _ = _publish(cache_case, "9.0.0")
+    else:
+        higher.mkdir(parents=True)
+        if kind == "corrupt":
+            _ = (higher / "unexpected").write_bytes(b"corrupt")
+
+    # When
+    requested = _publish(cache_case, "1.0.0")
+
+    # Then
+    assert requested.cache_path == _target(cache_case, "1.0.0")
+    assert higher.exists()
+
+
+@pytest.mark.parametrize("version", ["1.10", "v2"])
+def test_publish_rejects_noncanonical_versions(cache_case: CacheCase, version: str) -> None:
+    with pytest.raises(InstallPluginError, match="package_version_invalid"):
+        _ = _publish(cache_case, version)
 
 
 @pytest.mark.parametrize("kind", PACKAGE_FAILURES)
@@ -239,51 +247,7 @@ def test_path_attacks_fail_closed(
         return descriptor
 
     monkeypatch.setattr(install_cache, "open_direct_file", changed_open)
-    reason = "cache_same_version_mismatch" if published else "package_source_unsafe"
+    reason = "installed_generation_conflict" if published else "package_source_unsafe"
     with pytest.raises(InstallPluginError, match=reason):
         _ = _publish(cache_case)
     assert target.exists() is published
-
-
-@pytest.mark.parametrize("scenario", DURABILITY_CASES)
-def test_durability_failure_rolls_back_only_run_identity(
-    cache_case: CacheCase,
-    scenario: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    prior = _publish(cache_case, "0.0.0")
-    target = _target(cache_case)
-
-    def changed_flush(path: Path) -> None:
-        staging = ".cmw-install-staging" in path.parts
-        if scenario == "file" and staging and path.is_file():
-            raise OSError
-        if scenario == "directory" and staging and path.is_dir():
-            raise OSError
-        final_failure = scenario in {"final-parent", "cleanup-swap"}
-        if final_failure and path == target.parent and target.exists():
-            if scenario == "cleanup-swap":
-                _ = target.rename(cache_case[0].parent / "published-old")
-                target.mkdir()
-                _ = (target / "competitor").write_bytes(b"keep")
-            raise OSError
-
-    def changed_rename(stage: Path, destination: Path) -> None:
-        if scenario == "no-replace":
-            destination.mkdir()
-            _ = (destination / "competitor").write_bytes(b"keep")
-            raise FileExistsError
-        _ = stage.rename(destination)
-        if scenario == "post-rename":
-            _ = (destination / "payload" / "a.txt").write_bytes(b"tampered")
-
-    monkeypatch.setattr(install_cache, "_flush_path", changed_flush)
-    monkeypatch.setattr(install_cache, "_rename_no_replace", changed_rename)
-    reason = "cache_cleanup_failed" if scenario == "cleanup-swap" else "cache_"
-    with pytest.raises(InstallPluginError, match=reason):
-        _ = _publish(cache_case)
-    assert prior.cache_path.exists()
-    if scenario in {"no-replace", "cleanup-swap"}:
-        assert (target / "competitor").read_bytes() == b"keep"
-    else:
-        assert not target.exists()

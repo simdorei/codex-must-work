@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "codex-must-work": {
+      "command": "../../../../data/codex-must-work-codex-must-work-local/portable-python-3.12.13+20260510/python",
+      "args": [
+        "-B",
+        "scripts/mcp_server.py",
+        "--plugin-data",
+        "../../../../data/codex-must-work-codex-must-work-local"
+      ],
+      "cwd": ".",
+      "env": {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONUTF8": "1"
+      },
+      "required": true,
+      "startup_timeout_sec": 15,
+      "tool_timeout_sec": 120,
+      "supports_parallel_tool_calls": false
+    }
+  }
+}

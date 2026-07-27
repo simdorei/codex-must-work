@@ -67,8 +67,8 @@ def test_hooks_use_only_the_portable_runtime_launcher() -> None:
     # When / Then: no system Python command remains at the bootstrap boundary.
     assert "python3 " not in hooks
     assert "py -3 " not in hooks
-    assert hooks.count("launch-python") == 6
-    assert hooks.count("-ForwardStdin") == 3
+    assert hooks.count("launch-python") == 2
+    assert hooks.count("-ForwardStdin") == 1
 
 
 def test_hooks_register_only_low_frequency_lifecycle_events() -> None:
@@ -78,7 +78,7 @@ def test_hooks_register_only_low_frequency_lifecycle_events() -> None:
     )
     registered = cast("dict[str, object]", hooks["hooks"])
 
-    assert set(registered) == {"SessionStart", "UserPromptSubmit", "Stop"}
+    assert set(registered) == {"SessionStart"}
 
 
 def test_skills_use_only_the_portable_runtime_launcher() -> None:
@@ -187,7 +187,11 @@ def test_windows_launcher_forwards_warning_option_to_python(tmp_path: Path) -> N
 @pytest.mark.skipif(os.name != "nt", reason="Windows launcher E2E runs only on Windows")
 def test_windows_launcher_forwards_hook_stdin(tmp_path: Path) -> None:
     launcher = _ROOT / "runtime" / "launch-python.ps1"
-    hook = _ROOT / "scripts" / "hook_event.py"
+    probe = tmp_path / "stdin_probe.py"
+    _ = probe.write_text(
+        "import sys\n_ = sys.stdout.write(sys.stdin.read())\n",
+        encoding="utf-8",
+    )
     powershell = (
         Path(os.environ["SYSTEMROOT"])
         / "System32"
@@ -196,9 +200,6 @@ def test_windows_launcher_forwards_hook_stdin(tmp_path: Path) -> None:
         / "powershell.exe"
     )
     environment = os.environ.copy()
-    codex_home = tmp_path / "codex-home"
-    codex_home.mkdir()
-    environment["CODEX_HOME"] = str(codex_home)
     environment["PLUGIN_DATA"] = str(tmp_path / "plugin-data")
     payload = json.dumps(
         {
@@ -220,7 +221,7 @@ def test_windows_launcher_forwards_hook_stdin(tmp_path: Path) -> None:
             "-File",
             str(launcher),
             "-ForwardStdin",
-            str(hook),
+            str(probe),
         ],
         input=payload,
         check=False,
@@ -232,6 +233,4 @@ def test_windows_launcher_forwards_hook_stdin(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    envelope = cast("dict[str, object]", json.loads(result.stdout))
-    specific = cast("dict[str, object]", envelope["hookSpecificOutput"])
-    assert specific["hookEventName"] == "SessionStart"
+    assert result.stdout == payload

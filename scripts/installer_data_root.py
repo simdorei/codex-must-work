@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
 import stat
 from dataclasses import dataclass
@@ -21,6 +23,7 @@ _MARKER: Final = ".private-root-v1"
 _MARKER_BYTES: Final = b"private-root-v1\n"
 _INVALID: Final = "plugin_data_root_invalid"
 _CLEANUP_CONFLICT: Final = "plugin_data_cleanup_conflict"
+_CONTROL_KEY_BYTES: Final = 32
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +33,8 @@ class DataRootPublication:
     path: Path
     created_by_run: bool
     identity: FileIdentity
+    control_key_identity: FileIdentity | None = None
+    control_key_digest: bytes | None = None
 
 
 def prepare_data_root(codex_home: Path) -> DataRootPublication:
@@ -53,19 +58,58 @@ def prepare_data_root(codex_home: Path) -> DataRootPublication:
     return DataRootPublication(root, created_by_run=not existed, identity=identity)
 
 
+def bind_created_control_key(
+    publication: DataRootPublication,
+    key: bytes,
+) -> DataRootPublication:
+    """Bind rollback to the exact control key created inside a new data root."""
+    if not publication.created_by_run:
+        return publication
+    path = publication.path / "control.key"
+    return DataRootPublication(
+        path=publication.path,
+        created_by_run=True,
+        identity=publication.identity,
+        control_key_identity=file_identity(path.lstat()),
+        control_key_digest=hashlib.sha256(key).digest(),
+    )
+
+
 def remove_created_data_root(publication: DataRootPublication) -> None:
     """Remove only the unchanged private root created by this transaction."""
     if not publication.created_by_run:
         return
     root = publication.path
     marker = root / _MARKER
+    control_key = root / "control.key"
     try:
         if file_identity(root.lstat()) != publication.identity:
             _fail(_CLEANUP_CONFLICT)
         ensure_private_root(root)
-        names = tuple(root.iterdir())
-        if names != (marker,):
+        names = frozenset(root.iterdir())
+        expected = (
+            frozenset((marker, control_key))
+            if publication.control_key_identity is not None
+            else frozenset((marker,))
+        )
+        if names != expected:
             _fail(_CLEANUP_CONFLICT)
+        if publication.control_key_identity is not None:
+            descriptor = open_direct_file(
+                control_key,
+                os.O_RDONLY | getattr(os, "O_BINARY", 0),
+            )
+            with os.fdopen(descriptor, "rb") as handle:
+                key = handle.read(33)
+                opened = os.fstat(handle.fileno())
+            digest = publication.control_key_digest
+            if (
+                file_identity(opened) != publication.control_key_identity
+                or len(key) != _CONTROL_KEY_BYTES
+                or digest is None
+                or not hmac.compare_digest(hashlib.sha256(key).digest(), digest)
+            ):
+                _fail(_CLEANUP_CONFLICT)
         named = marker.lstat()
         descriptor = open_direct_file(marker, os.O_RDONLY | getattr(os, "O_BINARY", 0))
         with os.fdopen(descriptor, "rb") as handle:
@@ -78,6 +122,8 @@ def remove_created_data_root(publication: DataRootPublication) -> None:
             or contents != _MARKER_BYTES
         ):
             _fail(_CLEANUP_CONFLICT)
+        if publication.control_key_identity is not None:
+            control_key.unlink()
         marker.unlink()
         root.rmdir()
     except InstallPluginError:

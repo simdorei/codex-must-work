@@ -3,14 +3,16 @@ import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final, Protocol
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
 from scripts.calibration import CalibrationRecommendation, CalibrationStatus
+from scripts.control_capability import provision_control_key
 from scripts.durations import Milliseconds
 from scripts.hook_event import process_hook
 from scripts.hook_payload import SessionLocator, serialize_locator
+from scripts.install_errors import InstallPluginError
 from scripts.state import JsonValue, StateDocument, load_state, save_state
 from tests.hook_fixture import enabled_runtime, hook_event
 
@@ -45,6 +47,7 @@ def test_process_hook_when_session_starts_emits_locator_with_calibration() -> No
         transcript = temporary / "rollout.jsonl"
         plugin_root = temporary / "plugin"
         plugin_data = temporary / "plugin-data"
+        _ = provision_control_key(plugin_data, root)
         manifest = plugin_root / ".codex-plugin" / "plugin.json"
         manifest.parent.mkdir(parents=True)
         _ = manifest.write_text('{"version":"1.2.3"}', encoding="utf-8")
@@ -54,12 +57,20 @@ def test_process_hook_when_session_starts_emits_locator_with_calibration() -> No
             prompt="PRIVATE-PROMPT",
         )
 
-        with patch(
-            "scripts.hook_event._scan_history",
-            return_value=CalibrationRecommendation(
-                42,
-                Milliseconds(180_000),
-                Milliseconds(480_000),
+        generation_digest = "d" * 64
+        generation = Mock(digest=generation_digest)
+        with (
+            patch(
+                "scripts.installed_generation.require_session_generation",
+                return_value=generation,
+            ),
+            patch(
+                "scripts.hook_event._scan_history",
+                return_value=CalibrationRecommendation(
+                    42,
+                    Milliseconds(180_000),
+                    Milliseconds(480_000),
+                ),
             ),
         ):
             output = process_hook(
@@ -74,6 +85,8 @@ def test_process_hook_when_session_starts_emits_locator_with_calibration() -> No
         assert output.transcript_path == str(transcript.resolve())
         assert output.plugin_root == str(plugin_root.resolve())
         assert output.plugin_data == str(plugin_data.resolve())
+        assert output.package_digest_sha256 == generation_digest
+        assert len(output.control_capability) == 43
         assert output.calibration.status is CalibrationStatus.PENDING
         assert output.calibration.sample_count == 42
         assert root.joinpath("calibration.json").is_file()
@@ -81,6 +94,10 @@ def test_process_hook_when_session_starts_emits_locator_with_calibration() -> No
         serialized = serialize_locator(output)
         context = _locator_context(output)
         calibration = context["codex_must_work_calibration"]
+        locator = context["codex_must_work_locator"]
+        assert isinstance(locator, dict)
+        assert locator["control_capability"] == output.control_capability
+        assert locator["package_digest_sha256"] == generation_digest
         assert isinstance(calibration, dict)
         assert calibration["action"] == "ask_apply"
         assert calibration["required_skill"] == "work-calibration"
@@ -114,36 +131,87 @@ def test_process_hook_asks_for_calibration_only_in_first_thread(tmp_path: Path) 
     manifest.parent.mkdir(parents=True)
     _ = manifest.write_text('{"version":"1.2.3"}', encoding="utf-8")
     raw = hook_event("SessionStart", transcript_path=str(tmp_path / "rollout.jsonl"))
+    plugin_data = tmp_path / "data"
+    _ = provision_control_key(plugin_data, root)
 
-    with patch(
-        "scripts.hook_event._scan_history",
-        return_value=CalibrationRecommendation(
-            20,
-            Milliseconds(60_000),
-            Milliseconds(120_000),
+    generation = Mock(digest="e" * 64)
+    with (
+        patch(
+            "scripts.installed_generation.require_session_generation",
+            return_value=generation,
+        ),
+        patch(
+            "scripts.hook_event._scan_history",
+            return_value=CalibrationRecommendation(
+                20,
+                Milliseconds(60_000),
+                Milliseconds(120_000),
+            ),
         ),
     ):
         first = process_hook(
             raw,
             root=root,
             plugin_root=plugin_root,
-            plugin_data=tmp_path / "data",
+            plugin_data=plugin_data,
         )
         second = process_hook(
             raw,
             root=root,
             plugin_root=plugin_root,
-            plugin_data=tmp_path / "data",
+            plugin_data=plugin_data,
         )
 
     assert isinstance(first, SessionLocator)
     assert isinstance(second, SessionLocator)
     first_calibration = _locator_context(first)["codex_must_work_calibration"]
     second_calibration = _locator_context(second)["codex_must_work_calibration"]
+    first_notifications = _locator_context(first)["codex_must_work_notifications"]
+    second_notifications = _locator_context(second)["codex_must_work_notifications"]
     assert isinstance(first_calibration, dict)
     assert isinstance(second_calibration, dict)
+    assert isinstance(first_notifications, dict)
+    assert isinstance(second_notifications, dict)
     assert first_calibration["action"] == "ask_apply"
     assert second_calibration["action"] == "awaiting_answer"
+    assert first_notifications == {
+        "status": "not_configured",
+        "action": "offer_setup",
+        "setup_tool": "cmw.notifications.setup",
+    }
+    assert second_notifications == {
+        "status": "not_configured",
+        "action": "available",
+        "setup_tool": "cmw.notifications.setup",
+    }
+
+
+def test_session_locator_rejects_a_root_other_than_the_configured_generation(
+    tmp_path: Path,
+) -> None:
+    # Given
+    root = tmp_path / "codex-must-work"
+    plugin_root = tmp_path / "stale-plugin"
+    plugin_root.mkdir()
+    plugin_data = tmp_path / "data"
+    _ = provision_control_key(plugin_data, root)
+    raw = hook_event("SessionStart", transcript_path=str(tmp_path / "rollout.jsonl"))
+
+    # When / Then
+    with (
+        patch(
+            "scripts.installed_generation.require_session_generation",
+            side_effect=InstallPluginError("installed_generation_mismatch"),
+        ) as require,
+        pytest.raises(InstallPluginError, match="installed_generation_mismatch"),
+    ):
+        _ = process_hook(
+            raw,
+            root=root,
+            plugin_root=plugin_root,
+            plugin_data=plugin_data,
+        )
+    require.assert_called_once_with(root.parent, plugin_root.resolve())
 
 
 def test_process_hook_when_enabled_verifies_private_root() -> None:

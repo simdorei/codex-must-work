@@ -71,7 +71,7 @@ def create_secure_directory(path: Path) -> Path:
         path.mkdir(mode=_DIRECTORY_MODE)
         created = True
     except FileExistsError:
-        pass
+        created = False
     if not secure_path(path, directory=True, apply=created):
         _fail("cache_path_invalid")
     return path
