@@ -22,6 +22,28 @@ _STYLE: Final = """
   --error-surface: #fdebec;
   --error-text: #8a2927;
   --focus-ring: #4f46b8;
+  --font-sans: "Segoe UI Variable", "Noto Sans KR", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  --text-size-body: 16px;
+  --text-size-heading: 28px;
+  --text-size-small: 14px;
+  --text-size-micro: 12px;
+  --line-body: 1.6;
+  --line-heading: 1.25;
+  --line-small: 1.5;
+  --line-micro: 1.4;
+  --line-control: 1.4;
+  --weight-heading: 650;
+  --weight-label: 600;
+  --weight-micro: 500;
+  --tracking-heading: -.02em;
+  --tracking-micro: .02em;
+  --radius-panel: 12px;
+  --radius-control: 6px;
+  --control-height: 48px;
+  --panel-width: 560px;
+  --panel-padding: clamp(24px, 6vw, 48px);
+  --transition-fast: 150ms ease-out;
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -57,46 +79,54 @@ body {
   padding: var(--space-8) var(--space-4);
   background: var(--surface-canvas);
   color: var(--text-primary);
-  font-family: "Segoe UI Variable", "Noto Sans KR", system-ui, sans-serif;
-  font-size: 16px;
-  line-height: 1.6;
+  font-family: var(--font-sans);
+  font-size: var(--text-size-body);
+  line-height: var(--line-body);
 }
-main { inline-size: min(100%, 560px); }
+main { inline-size: min(100%, var(--panel-width)); }
 .panel {
-  padding: clamp(24px, 6vw, 48px);
+  padding: var(--panel-padding);
   border: 1px solid var(--border-default);
-  border-radius: 12px;
+  border-radius: var(--radius-panel);
   background: var(--surface-panel);
 }
 .eyebrow {
   margin: 0 0 var(--space-2);
   color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: .08em;
+  font-size: var(--text-size-micro);
+  font-weight: var(--weight-micro);
+  line-height: var(--line-micro);
+  letter-spacing: var(--tracking-micro);
   text-transform: uppercase;
 }
 h1 {
   margin: 0;
-  font-size: 28px;
-  font-weight: 650;
-  line-height: 1.25;
-  letter-spacing: -.02em;
+  font-family: var(--font-sans);
+  font-size: var(--text-size-heading);
+  font-weight: var(--weight-heading);
+  line-height: var(--line-heading);
+  letter-spacing: var(--tracking-heading);
 }
 .lead { margin: var(--space-3) 0 var(--space-8); color: var(--text-secondary); }
 form { display: grid; gap: var(--space-4); }
-label { font-size: 14px; font-weight: 600; }
+label {
+  font-family: var(--font-sans);
+  font-size: var(--text-size-small);
+  font-weight: var(--weight-label);
+}
 input {
   inline-size: 100%;
-  min-block-size: 48px;
+  min-block-size: var(--control-height);
   margin-block-start: var(--space-2);
   padding: 0 var(--space-3);
   border: 1px solid var(--border-default);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   outline: 0;
   background: var(--surface-input);
   color: var(--text-primary);
-  font: 16px/1.4 "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono);
+  font-size: var(--text-size-body);
+  line-height: var(--line-control);
 }
 input:hover { border-color: var(--text-secondary); }
 input:focus-visible, button:focus-visible {
@@ -106,18 +136,22 @@ input:focus-visible, button:focus-visible {
 .help, .privacy {
   margin: var(--space-2) 0 0;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: var(--text-size-small);
+  line-height: var(--line-small);
 }
 button {
-  min-block-size: 48px;
+  min-block-size: var(--control-height);
   padding: 0 var(--space-4);
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   background: var(--accent-primary);
   color: var(--text-on-accent);
   cursor: pointer;
-  font: 600 16px/1.2 "Segoe UI Variable", "Noto Sans KR", system-ui, sans-serif;
-  transition: background-color 150ms ease-out, opacity 150ms ease-out;
+  font-family: var(--font-sans);
+  font-size: var(--text-size-body);
+  font-weight: var(--weight-label);
+  line-height: var(--line-control);
+  transition: background-color var(--transition-fast), opacity var(--transition-fast);
 }
 button:hover { background: var(--accent-hover); }
 button:active { opacity: .84; }
@@ -126,13 +160,19 @@ button:disabled { cursor: wait; opacity: .58; }
   min-block-size: 24px;
   margin: 0;
   padding: var(--space-3);
-  border-radius: 6px;
+  border-radius: var(--radius-control);
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: var(--text-size-small);
+  line-height: var(--line-small);
 }
 .result:empty { display: none; }
+.result:not(:empty) { margin-block-start: var(--space-4); }
 .result.error { background: var(--error-surface); color: var(--error-text); }
 .result.success { background: var(--success-surface); color: var(--success-text); }
+.lead, .help, .privacy, .result {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
 .privacy {
   margin-block-start: var(--space-6);
   padding-block-start: var(--space-4);
@@ -141,7 +181,7 @@ button:disabled { cursor: wait; opacity: .58; }
 [hidden] { display: none !important; }
 @media (max-width: 420px) {
   body { padding: var(--space-4); }
-  .panel { padding: var(--space-6); }
+  :root { --panel-padding: var(--space-6); }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
@@ -153,8 +193,10 @@ const form = document.querySelector("#setup-form");
 const field = document.querySelector("#webhook-url");
 const button = document.querySelector("#submit");
 const result = document.querySelector("#result");
+field.addEventListener("input", () => field.removeAttribute("aria-invalid"));
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  field.removeAttribute("aria-invalid");
   button.disabled = true;
   button.textContent = "연결 확인 중…";
   form.setAttribute("aria-busy", "true");
@@ -212,9 +254,11 @@ def render_setup_page(csrf_token: str, script_nonce: str) -> bytes:
 <body>
   <main>
     <section class="panel" aria-labelledby="title">
-      <p class="eyebrow">Codex Must Work</p>
-      <h1 id="title">Discord 알림 연결</h1>
-      <p class="lead">CMW가 병목과 회복을 알려줄 Discord 웹훅을 연결합니다.</p>
+      <header>
+        <p class="eyebrow">Codex Must Work</p>
+        <h1 id="title">Discord 알림 연결</h1>
+        <p class="lead">CMW가 병목과 회복을 알려줄 Discord 웹훅을 연결합니다.</p>
+      </header>
       <form id="setup-form" novalidate>
         <input type="hidden" name="csrf_token" value="{csrf}">
         <div>

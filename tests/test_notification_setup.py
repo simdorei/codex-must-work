@@ -11,6 +11,7 @@ from urllib.parse import urlencode, urlsplit
 from scripts.discord_webhook import DiscordWebhookError
 from scripts.notification_config import NotificationConfigStore
 from scripts.notification_setup import NotificationSetupCoordinator
+from scripts.notification_setup_page import render_setup_page
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -217,3 +218,28 @@ def test_setup_failure_is_safe_and_does_not_save(tmp_path: Path) -> None:
         assert coordinator.is_active() is True
     finally:
         coordinator.close()
+
+
+def test_setup_page_uses_reusable_shape_and_typography_tokens() -> None:
+    html = render_setup_page("csrf", "nonce").decode("utf-8")
+
+    for token, minimum_uses in (
+        ("--font-sans", 3),
+        ("--text-size-body", 3),
+        ("--text-size-small", 3),
+        ("--radius-control", 3),
+        ("--control-height", 2),
+        ("--tracking-micro", 1),
+        ("--tracking-heading", 1),
+    ):
+        assert html.count(f"var({token})") >= minimum_uses
+    assert "<header>" in html
+    assert "</header>" in html
+
+
+def test_setup_page_preserves_korean_words_and_separates_live_feedback() -> None:
+    html = render_setup_page("csrf", "nonce").decode("utf-8")
+
+    assert "word-break: keep-all" in html
+    assert ".result:not(:empty)" in html
+    assert 'field.removeAttribute("aria-invalid")' in html
