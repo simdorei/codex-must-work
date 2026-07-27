@@ -128,10 +128,10 @@ def _root_parser_fixture() -> _RootParserFixture:
     return _RootParserFixture(source_path=source_path, releases=parsed)
 
 
-def test_metadata_marketplace_is_the_exact_local_contract() -> None:
+def test_metadata_marketplace_is_the_exact_public_contract() -> None:
     assert _json(".agents/plugins/marketplace.json") == {
-        "name": "codex-must-work-local",
-        "interface": {"displayName": "Codex Must Work Local"},
+        "name": "simdorei",
+        "interface": {"displayName": "simdorei"},
         "plugins": [
             {
                 "name": "codex-must-work",

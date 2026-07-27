@@ -1,7 +1,7 @@
 {
-  "name": "codex-must-work-local",
+  "name": "simdorei",
   "interface": {
-    "displayName": "Codex Must Work Local"
+    "displayName": "simdorei"
   },
   "plugins": [
     {
