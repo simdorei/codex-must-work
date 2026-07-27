@@ -243,3 +243,4 @@ def test_setup_page_preserves_korean_words_and_separates_live_feedback() -> None
     assert "word-break: keep-all" in html
     assert ".result:not(:empty)" in html
     assert 'field.removeAttribute("aria-invalid")' in html
+    assert "Codex 앱을 한 번 재시작하는 것을 권장합니다" in html

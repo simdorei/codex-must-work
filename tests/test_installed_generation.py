@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -209,3 +210,44 @@ def test_session_generation_requires_the_exact_resolved_plugin_root(
     assert exact == expected
     with pytest.raises(InstallPluginError, match="installed_generation_mismatch"):
         _ = require_session_generation(home.resolve(), other_root)
+
+
+def test_session_generation_accepts_verified_simdorei_marketplace_cache(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    root = (
+        home / "plugins" / "cache" / "simdorei" / "codex-must-work" / "0.2.0+codex.20260728010101"
+    )
+    package_files = (
+        ".codex-plugin/plugin.json",
+        "hooks/hooks.json",
+        "runtime/package-files.json",
+    )
+    (root / ".codex-plugin").mkdir(parents=True)
+    (root / "hooks").mkdir()
+    (root / "runtime").mkdir()
+    _ = (root / ".codex-plugin/plugin.json").write_text(
+        '{"name":"codex-must-work","version":"0.2.0+codex.20260728010101"}',
+        encoding="utf-8",
+    )
+    _ = (root / "hooks/hooks.json").write_text('{"hooks":{}}', encoding="utf-8")
+    _ = (root / "runtime/package-files.json").write_text(
+        json.dumps(package_files),
+        encoding="utf-8",
+    )
+
+    generation = require_session_generation(home.resolve(), root)
+
+    assert generation.root == root.resolve()
+    assert generation.version == root.name
+    assert len(generation.digest) == 64
+
+
+def test_session_generation_rejects_unapproved_marketplace_cache(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    root = home / "plugins" / "cache" / "other" / "codex-must-work" / "0.2.0"
+    root.mkdir(parents=True)
+
+    with pytest.raises(InstallPluginError, match="installed_generation_mismatch"):
+        _ = require_session_generation(home.resolve(), root)

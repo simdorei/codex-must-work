@@ -40,7 +40,7 @@ def test_manifest_registers_existing_mcp_companion() -> None:
     assert "MCP" in capabilities
 
 
-def test_mcp_uses_direct_portable_python_without_resident_shell() -> None:
+def test_mcp_uses_bundled_native_windows_launcher() -> None:
     # Given / When
     servers = _json(".mcp.json")["mcpServers"]
     assert isinstance(servers, dict)
@@ -48,15 +48,9 @@ def test_mcp_uses_direct_portable_python_without_resident_shell() -> None:
 
     # Then
     assert server == {
-        "command": (
-            "../../../../data/codex-must-work-codex-must-work-local/"
-            "portable-python-3.12.13+20260510/python"
-        ),
+        "command": "runtime/launch-python.exe",
         "args": [
-            "-B",
             "scripts/mcp_server.py",
-            "--plugin-data",
-            "../../../../data/codex-must-work-codex-must-work-local",
         ],
         "cwd": ".",
         "env": {
@@ -64,12 +58,14 @@ def test_mcp_uses_direct_portable_python_without_resident_shell() -> None:
             "PYTHONUTF8": "1",
         },
         "required": True,
-        "startup_timeout_sec": 15,
+        "startup_timeout_sec": 60,
         "tool_timeout_sec": 120,
         "supports_parallel_tool_calls": False,
     }
     serialized = json.dumps(server).lower()
-    assert all(shell not in serialized for shell in ("powershell", "pwsh", "cmd.exe", "sh"))
+    assert "codex-must-work-local" not in serialized
+    assert "simdorei" not in serialized
+    assert all(shell not in serialized for shell in ("powershell", "pwsh", "cmd.exe"))
 
 
 def test_only_low_frequency_session_hook_remains() -> None:
@@ -134,5 +130,8 @@ def test_package_contains_mcp_surface_and_all_listed_files_exist() -> None:
     assert "scripts/mcp_server.py" in paths
     assert "scripts/notification_setup.py" in paths
     assert "scripts/notification_setup_page.py" in paths
+    assert "runtime/launch-python.exe" in paths
+    assert "runtime/windows-launcher/Cargo.toml" in paths
+    assert "runtime/windows-launcher/src/main.rs" in paths
     assert "scripts/watcher_notifications.py" in paths
     assert all((ROOT / path).is_file() for path in paths)

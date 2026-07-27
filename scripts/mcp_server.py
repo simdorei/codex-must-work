@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts.control_capability import ControlKeyError, load_control_key
+from scripts.control_capability import ControlKeyError, provision_control_key
 from scripts.daemon_control_endpoint import ControlEndpoint
 from scripts.mcp_dispatch import McpServer
 from scripts.mcp_protocol import DaemonBackend, StdioStreams
@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     from scripts.state import state_root  # noqa: PLC0415
 
     try:
-        control_key = load_control_key(plugin_data, state_root())
+        control_key = provision_control_key(plugin_data, state_root())
     except ControlKeyError as error:
         _ = sys.stderr.write(f"{error.reason_code}\n")
         return 2
@@ -80,10 +80,13 @@ def configure_plugin_data(
 ) -> Path:
     """Resolve the required plugin data root before daemon construction."""
     parser = argparse.ArgumentParser(prog="codex-must-work-mcp")
-    _ = parser.add_argument("--plugin-data", required=True)
+    _ = parser.add_argument("--plugin-data")
     namespace = _PluginDataArgs()
     _ = parser.parse_args(argv, namespace=namespace)
-    value = Path(namespace.plugin_data)
+    configured = namespace.plugin_data or environ.get("PLUGIN_DATA")
+    if not configured:
+        parser.error("--plugin-data or PLUGIN_DATA is required")
+    value = Path(configured)
     resolved = (value if value.is_absolute() else cwd / value).resolve()
     environ["PLUGIN_DATA"] = str(resolved)
     return resolved

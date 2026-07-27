@@ -43,8 +43,29 @@ compromised Codex process.
 
 ## Installation
 
-Codex Must Work는 Windows x64, Linux x64, macOS ARM64를 지원합니다. 저장소를 내려받은 뒤
-저장소 루트에서 운영체제에 맞는 명령 하나를 실행하세요.
+검증형 로컬 설치 프로그램은 Windows x64, Linux x64, macOS ARM64를 지원합니다.
+현재 `simdorei` 설치 버튼 경로는 Windows x64를 지원합니다.
+
+### 플러그인 설치 버튼으로 설치
+
+Windows x64에서 Codex 플러그인에 `simdorei/codex-must-work` 마켓플레이스를 추가한 뒤
+**Codex Must Work → 설치**를 누르세요. 설치 파일에 포터블 Python 압축본이 포함되어
+있으므로 시스템 Python이나 첫 실행 다운로드가 필요하지 않습니다. 설치 직후 또는 새
+스레드에서 MCP가 처음 시작될 때 현재 설치 출처에 맞는 전용 데이터 폴더와 보안 키를 만들고
+Windows 런타임을 한 번만 풉니다. 이후에는 작은 네이티브 실행기가 준비된 Python을 바로
+재사용합니다.
+
+새 스레드에서 Discord 알림 연결 제안을 수락하면 로컬 설정 페이지가 열립니다. 웹훅 주소는
+그 페이지에만 붙여넣으며 Codex 대화에는 입력하지 않습니다. 연결 테스트와 저장이 끝나면
+설정 페이지와 Codex 안내가 Codex 앱 1회 재시작을 권장합니다.
+
+플러그인 설치 또는 업데이트 뒤에는 새 스레드를 여세요. `SessionStart` 훅 신뢰 확인이
+표시되면 현재 플러그인의 훅 한 개를 검토해 승인해야 CMW의 세션 정보가 주입됩니다.
+
+### 검증형 로컬 설치 프로그램
+
+저장소 체크아웃을 직접 관리하고 설치 캐시·훅 신뢰까지 한 번에 고정하려면 저장소 루트에서
+운영체제에 맞는 명령을 실행하세요.
 
 Windows PowerShell:
 
@@ -58,13 +79,11 @@ Linux 또는 macOS:
 ./install.sh
 ```
 
-위 두 저장소 루트 스크립트가 설치와 업데이트를 위한 유일한 지원 경로입니다.
 소스 체크아웃을 이동하거나 삭제하지 마세요. 저장소를 업데이트한 뒤 같은 설치 명령을 다시 실행하면 검증된 새
-버전 캐시와 신뢰 설정을 한 번에 갱신합니다. 일반 플러그인 설치나 수동 신뢰를 별도 대안으로
-사용하지 않습니다.
+버전 캐시와 신뢰 설정을 한 번에 갱신합니다.
 
 설치 또는 업데이트가 끝나면 ChatGPT 데스크톱이나 Codex를 재시작하고 새 스레드를 여세요.
-설치 프로그램이 CMW의 `SessionStart` 훅을 신뢰하도록 기록하므로 `/hooks`에서 따로 승인할
+로컬 설치 프로그램이 CMW의 `SessionStart` 훅을 신뢰하도록 기록하므로 `/hooks`에서 따로 승인할
 필요가 없습니다. 새 설치 버전의 첫 스레드에서는 로컬 기록으로 추천값을 다시 계산하고
 Discord 알림 연결을 한 번 제안하지만, 둘 다 사용자가 동의하기 전에는 적용하지 않습니다.
 
@@ -89,7 +108,7 @@ The expected final reply is `WORK_ON_VERIFIED`; verified completion also disable
 
 - 플러그인: `codex-must-work@codex-must-work-local`
 - 마켓플레이스 설정: `[marketplaces.codex-must-work-local]`
-- 버전 캐시: `<CODEX_HOME>/plugins/cache/codex-must-work-local/codex-must-work/0.2.0+codex.20260727220405`
+- 버전 캐시: `<CODEX_HOME>/plugins/cache/codex-must-work-local/codex-must-work/0.2.0+codex.20260728002615`
 - 작업 데이터: `<CODEX_HOME>/plugins/data/codex-must-work-codex-must-work-local`
 - Codex 설정: `<CODEX_HOME>/config.toml`
 
@@ -260,9 +279,11 @@ Discord HTTP 요청은 세 상태가 실제로 바뀔 때만 실행됩니다. �
 ## 포터블 Python
 
 시스템 Python이나 첫 실행 다운로드가 필요하지 않습니다. 다음 세 CPython 3.12.13 런타임을
-플러그인에 압축 상태로 포함하며, 설치할 때 해당 운영체제의 런타임만 `PLUGIN_DATA`에 한 번
-풉니다. Codex는 준비된 `portable-python-3.12.13+20260510/python`으로 MCP/daemon을 직접 시작하므로
-PowerShell이나 `sh` 프로세스가 daemon의 부모로 계속 남지 않습니다.
+플러그인에 압축 상태로 포함하며, 첫 실행 때 해당 운영체제의 런타임만 `PLUGIN_DATA`에 한 번
+풉니다. `simdorei` 설치 버튼 경로에서는 Windows 네이티브 실행기가 준비된 Python을 바로
+재사용하고, 런타임이 없는 최초 준비 때만 PowerShell을 한 번 실행합니다. 검증형 로컬
+설치에서는 Linux와 macOS 셸 실행기도 준비 후 Python으로 교체됩니다. 따라서 매 이벤트마다
+PowerShell과 Python을 새로 실행하지 않습니다.
 
 - Windows x64
 - Linux x64
@@ -273,11 +294,11 @@ PowerShell이나 `sh` 프로세스가 daemon의 부모로 계속 남지 않습�
 
 ## 설치 후 확인
 
-설치 프로그램이 선택된 캐시의 정확한 `SessionStart` 훅을 신뢰하도록 기록하므로 별도
-신뢰 승인 단계가 필요하지 않습니다. 설치나 업데이트 후 애플리케이션을 재시작하고 새 스레드를
-열어야 MCP 도구, locator 주입, 설치 버전별 추천이 적용됩니다. `UserPromptSubmit` 훅은 사용하지
-않으며 `Stop` 훅도 사용하지 않습니다. 설치 프로그램이 신뢰를 확립하지 못하면 우회하지 않고
-오류 코드와 함께 중단합니다.
+검증형 로컬 설치 프로그램은 선택된 캐시의 정확한 `SessionStart` 훅을 신뢰하도록
+기록하므로 별도 승인 단계가 필요하지 않습니다. 플러그인 설치 버튼을 사용한 경우에는 Codex가
+보여주는 훅 신뢰 확인을 한 번 승인하세요. 설치나 업데이트 후 새 스레드를 열어야 MCP 도구,
+locator 주입, 설치 버전별 추천이 적용됩니다. `UserPromptSubmit` 훅과 `Stop` 훅은 사용하지
+않습니다.
 
 ## 리소스 구조
 

@@ -5,12 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final, Never
 
+from scripts.cache_package import load_package
+from scripts.cache_security import read_source, require_directory
 from scripts.cache_semver import VersionKey, version_key
+from scripts.cache_types import identity
 from scripts.hook_trust import read_plugin_manifest, trusted_hook_states_for_plugin
 from scripts.install_errors import InstallPluginError
 from scripts.installer_cache_validation import retained_cache_matches
 from scripts.installer_lock import installer_lock
 from scripts.installer_observation import PriorState, classify_prior
+from scripts.state_io import open_direct_file
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -19,6 +23,7 @@ if TYPE_CHECKING:
     from scripts.hook_trust import PluginManifest
 
 _MARKETPLACE: Final = "codex-must-work-local"
+_PUBLIC_MARKETPLACE: Final = "simdorei"
 _PLUGIN: Final = "codex-must-work"
 
 
@@ -83,6 +88,9 @@ def configured_generation(prior: PriorState) -> InstalledGeneration | None:
 
 def require_session_generation(codex_home: Path, plugin_root: Path) -> InstalledGeneration:
     """Reject SessionStart unless the hook root is the configured successful generation."""
+    public_generation = _public_marketplace_generation(codex_home, plugin_root)
+    if public_generation is not None:
+        return public_generation
     with installer_lock(codex_home) as lease:
         generation = configured_generation(classify_prior(codex_home, lease))
     try:
@@ -92,6 +100,29 @@ def require_session_generation(codex_home: Path, plugin_root: Path) -> Installed
     if generation is None or generation.root != active_root:
         _fail("installed_generation_mismatch")
     return generation
+
+
+def _public_marketplace_generation(
+    codex_home: Path,
+    plugin_root: Path,
+) -> InstalledGeneration | None:
+    expected_parent = codex_home.resolve() / "plugins" / "cache" / _PUBLIC_MARKETPLACE / _PLUGIN
+    try:
+        active_root = plugin_root.resolve(strict=True)
+    except (OSError, RuntimeError):
+        _fail("installed_generation_mismatch")
+    if active_root.parent != expected_parent:
+        return None
+    require_directory(active_root, "installed_generation_mismatch")
+    manifest = read_plugin_manifest(active_root)
+    _require_manifest_identity(manifest.name, manifest.version, active_root)
+    package = load_package(active_root, _read_direct)
+    return InstalledGeneration(
+        manifest.version,
+        active_root,
+        package.digest,
+        identity(active_root.lstat()),
+    )
 
 
 def select_generation(
@@ -123,6 +154,10 @@ def _canonical_key(version: str) -> VersionKey:
     if parsed is None:
         _fail("installed_generation_version_invalid")
     return parsed
+
+
+def _read_direct(path: Path, reason: str) -> bytes:
+    return read_source(path, reason, open_direct_file)
 
 
 def _fail(reason: str) -> Never:

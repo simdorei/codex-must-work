@@ -15,7 +15,7 @@ from scripts.state_io import open_direct_file
 
 ROOT = Path(__file__).resolve().parents[1]
 ORACLE = ROOT / "tests" / "fixtures" / "package-files-base-0352.txt"
-ORACLE_SHA = "e4046057375ac2325e6fda82df1fc6dbdccb3f79fee7bed9ef3a90ec31cace7d"
+ORACLE_SHA = "5eee478bec8407930ef8f38fa4e411fa9ff202771d00893485f1220bbb37ddb8"
 GOLDEN = "d073c2db6f4ecafccba71b30ebacda30e99c61bb449e06b013f9c40dfdc6ab68"
 MANIFEST = "runtime/package-files.json"
 
@@ -90,11 +90,11 @@ def test_oracle_and_manifest_are_exact() -> None:
     oracle_data = ORACLE.read_bytes()
     oracle = oracle_data.decode().splitlines()
     manifest = sorted([*oracle, MANIFEST], key=str.encode)
-    assert (len(oracle), hashlib.sha256(oracle_data).hexdigest()) == (138, ORACLE_SHA)
+    assert (len(oracle), hashlib.sha256(oracle_data).hexdigest()) == (145, ORACLE_SHA)
     assert oracle_data.endswith(b"\n")
     assert b"\r" not in oracle_data
     assert oracle == sorted(oracle, key=str.encode)
-    assert len(manifest) == len(set(manifest)) == 139
+    assert len(manifest) == len(set(manifest)) == 146
     assert all((ROOT / path).is_file() for path in manifest)
     installer_only = {
         "scripts/codex_config.py",

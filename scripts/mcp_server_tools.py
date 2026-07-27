@@ -54,6 +54,7 @@ def notification_setup_success(launch: NotificationSetupLaunch) -> JsonObject:
         "status": "ready",
         "setup_url": launch.setup_url,
         "expires_in_seconds": launch.expires_in_seconds,
+        "restart_recommended_after_save": True,
     }
     text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     return {

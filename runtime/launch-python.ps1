@@ -1,5 +1,6 @@
 param(
-    [switch] $ForwardStdin
+    [switch] $ForwardStdin,
+    [switch] $PrepareOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -22,6 +23,122 @@ $PreparedTarget = Join-Path $DataRoot "portable-python-$Version"
 $PreparedPython = Join-Path $PreparedTarget 'python.exe'
 $LockPath = Join-Path $DataRoot '.portable-python.lock'
 $Stage = Join-Path $DataRoot ('.portable-python-stage-' + [guid]::NewGuid().ToString('N'))
+
+function Assert-DirectDirectory {
+    param([Parameter(Mandatory = $true)][string] $Path)
+
+    $FullPath = [IO.Path]::GetFullPath($Path)
+    $Root = [IO.Path]::GetPathRoot($FullPath)
+    $Current = $Root
+    $Components = $FullPath.Substring($Root.Length).Split(
+        [IO.Path]::DirectorySeparatorChar,
+        [StringSplitOptions]::RemoveEmptyEntries
+    )
+    foreach ($Component in $Components) {
+        $Current = Join-Path $Current $Component
+        if (-not (Test-Path -LiteralPath $Current -PathType Container)) {
+            throw "private runtime parent is unavailable: $Current"
+        }
+        $Item = Get-Item -LiteralPath $Current -Force
+        if (
+            -not $Item.PSIsContainer -or
+            (($Item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)
+        ) {
+            throw "private runtime path is redirected: $Current"
+        }
+    }
+}
+
+function New-PrivateRootSecurity {
+    $Sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $Inheritance = [Security.AccessControl.InheritanceFlags]::ContainerInherit `
+        -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit
+    $Security = [Security.AccessControl.DirectorySecurity]::new()
+    $Security.SetOwner($Sid)
+    $Security.SetAccessRuleProtection($true, $false)
+    $Rule = [Security.AccessControl.FileSystemAccessRule]::new(
+        $Sid,
+        [Security.AccessControl.FileSystemRights]::FullControl,
+        $Inheritance,
+        [Security.AccessControl.PropagationFlags]::None,
+        [Security.AccessControl.AccessControlType]::Allow
+    )
+    [void] $Security.AddAccessRule($Rule)
+    return $Security
+}
+
+function Assert-PrivateRootSecurity {
+    param([Parameter(Mandatory = $true)][string] $Path)
+
+    $Sid = [Security.Principal.WindowsIdentity]::GetCurrent().User
+    $Inheritance = [Security.AccessControl.InheritanceFlags]::ContainerInherit `
+        -bor [Security.AccessControl.InheritanceFlags]::ObjectInherit
+    $Sections = [Security.AccessControl.AccessControlSections]::Owner `
+        -bor [Security.AccessControl.AccessControlSections]::Access
+    $Security = [IO.Directory]::GetAccessControl($Path, $Sections)
+    $Rules = @($Security.GetAccessRules(
+        $true,
+        $true,
+        [Security.Principal.SecurityIdentifier]
+    ))
+    if (
+        -not $Security.AreAccessRulesProtected -or
+        $Security.GetOwner([Security.Principal.SecurityIdentifier]).Value -ne $Sid.Value -or
+        $Rules.Count -ne 1
+    ) {
+        throw "private runtime ACL verification failed: $Path"
+    }
+    $Actual = $Rules[0]
+    if (
+        $Actual.IdentityReference.Value -ne $Sid.Value -or
+        $Actual.AccessControlType -ne [Security.AccessControl.AccessControlType]::Allow -or
+        $Actual.FileSystemRights -ne [Security.AccessControl.FileSystemRights]::FullControl -or
+        $Actual.InheritanceFlags -ne $Inheritance -or
+        $Actual.PropagationFlags -ne [Security.AccessControl.PropagationFlags]::None
+    ) {
+        throw "private runtime ACL verification failed: $Path"
+    }
+}
+
+function Initialize-PrivateDataRoot {
+    param([Parameter(Mandatory = $true)][string] $Path)
+
+    Assert-DirectDirectory (Split-Path -Parent $Path)
+    $Marker = Join-Path $Path '.private-root-v1'
+    if (Test-Path -LiteralPath $Path) {
+        Assert-DirectDirectory $Path
+        if (-not (Test-Path -LiteralPath $Marker -PathType Leaf)) {
+            throw "private runtime root requires migration: $Path"
+        }
+        $MarkerItem = Get-Item -LiteralPath $Marker -Force
+        if (($MarkerItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "private runtime marker is redirected: $Marker"
+        }
+        Assert-PrivateRootSecurity $Path
+        return
+    }
+
+    $Security = New-PrivateRootSecurity
+    [void] [IO.Directory]::CreateDirectory($Path, $Security)
+    Assert-DirectDirectory $Path
+    Assert-PrivateRootSecurity $Path
+    $Bytes = [Text.Encoding]::ASCII.GetBytes("private-root-v1`n")
+    $Stream = [IO.File]::Open(
+        $Marker,
+        [IO.FileMode]::CreateNew,
+        [IO.FileAccess]::Write,
+        [IO.FileShare]::None
+    )
+    try {
+        $Stream.Write($Bytes, 0, $Bytes.Length)
+        $Stream.Flush($true)
+    }
+    finally {
+        $Stream.Dispose()
+    }
+}
+
+Initialize-PrivateDataRoot $DataRoot
 
 if ((Test-Path -LiteralPath $PreparedTarget) -and -not (Test-Path -LiteralPath $PreparedPython -PathType Leaf)) {
     throw "portable runtime is incomplete: $PreparedTarget"
@@ -87,6 +204,10 @@ finally {
     }
     $Lock.Dispose()
 }
+}
+
+if ($PrepareOnly) {
+    exit 0
 }
 
 if ($ForwardStdin) {

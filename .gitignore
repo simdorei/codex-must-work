@@ -9,5 +9,6 @@ __pycache__/
 *.py[cod]
 build/
 dist/
+runtime/windows-launcher/target/
 .blocker-events-pending.jsonl
 .protocol-schema/

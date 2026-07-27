@@ -105,7 +105,8 @@ class McpServer:
                 "completion and cmw.stop for a manual shutdown. When SessionStart context "
                 "codex_must_work_notifications.action is offer_setup, briefly offer Discord "
                 "alerts. If accepted, call cmw.notifications.setup; never request or pass a "
-                "webhook URL in chat or tool arguments."
+                "webhook URL in chat or tool arguments. After the setup page saves successfully, "
+                "recommend restarting the Codex app once."
             ),
         }
 

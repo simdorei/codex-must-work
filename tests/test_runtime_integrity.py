@@ -33,6 +33,7 @@ class _ManifestEntry(TypedDict):
 
 class _McpServer(TypedDict):
     args: list[str]
+    command: str
     cwd: str
     env: dict[str, str]
 
@@ -199,8 +200,8 @@ def test_mcp_launch_disables_bytecode_and_keeps_relative_layout() -> None:
     server = config["mcpServers"]["codex-must-work"]
 
     # When / Then
-    assert server["args"][0] == "-B"
-    assert server["args"][1] == "scripts/mcp_server.py"
+    assert server["command"] == "runtime/launch-python.exe"
+    assert server["args"] == ["scripts/mcp_server.py"]
     assert server["env"]["PYTHONDONTWRITEBYTECODE"] == "1"
     assert server["cwd"] == "."
 

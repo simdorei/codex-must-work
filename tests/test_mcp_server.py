@@ -8,6 +8,7 @@ import pytest
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from pathlib import Path
 
     from scripts.mcp_protocol import JsonObject, JsonRpcResponse
     from scripts.state_io import JsonValue
@@ -20,7 +21,7 @@ from scripts.daemon_models import (
     StartRequest,
     ToolResult,
 )
-from scripts.mcp_server import McpServer
+from scripts.mcp_server import McpServer, configure_plugin_data
 from scripts.notification_setup import NotificationSetupLaunch
 
 
@@ -72,6 +73,28 @@ def test_initialize_negotiates_supported_protocol() -> None:
 
     # Then
     assert _success_result(response)["protocolVersion"] == "2025-06-18"
+
+
+def test_plugin_data_defaults_to_host_injected_environment(tmp_path: Path) -> None:
+    environment = {"PLUGIN_DATA": str(tmp_path / "plugin-data")}
+
+    resolved = configure_plugin_data([], cwd=tmp_path, environ=environment)
+
+    assert resolved == (tmp_path / "plugin-data").resolve()
+    assert environment["PLUGIN_DATA"] == str(resolved)
+
+
+def test_plugin_data_cli_argument_overrides_environment(tmp_path: Path) -> None:
+    environment = {"PLUGIN_DATA": str(tmp_path / "from-host")}
+
+    resolved = configure_plugin_data(
+        ["--plugin-data", "from-cli"],
+        cwd=tmp_path,
+        environ=environment,
+    )
+
+    assert resolved == (tmp_path / "from-cli").resolve()
+    assert environment["PLUGIN_DATA"] == str(resolved)
 
 
 def test_tools_list_exposes_only_cmw_control_tools_after_initialized() -> None:
@@ -156,6 +179,7 @@ def test_notification_setup_tool_exposes_only_local_short_lived_url() -> None:
         "status": "ready",
         "setup_url": "http://127.0.0.1:45123/setup/one-time",
         "expires_in_seconds": 300,
+        "restart_recommended_after_save": True,
     }
     serialized = json.dumps(called)
     assert "webhooks/" not in serialized

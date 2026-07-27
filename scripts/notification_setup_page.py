@@ -222,7 +222,9 @@ form.addEventListener("submit", async (event) => {
     field.value = "";
     form.hidden = true;
     result.className = "result success";
-    result.textContent = "연결되었습니다. 이 창을 닫아도 됩니다.";
+    result.textContent =
+      "연결되었습니다. Codex 앱을 한 번 재시작하는 것을 권장합니다. " +
+      "이 창은 닫아도 됩니다.";
   } catch (_error) {
     result.className = "result error";
     result.setAttribute("role", "alert");
