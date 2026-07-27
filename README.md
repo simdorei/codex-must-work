@@ -89,7 +89,7 @@ The expected final reply is `WORK_ON_VERIFIED`; verified completion also disable
 
 - 플러그인: `codex-must-work@codex-must-work-local`
 - 마켓플레이스 설정: `[marketplaces.codex-must-work-local]`
-- 버전 캐시: `<CODEX_HOME>/plugins/cache/codex-must-work-local/codex-must-work/0.2.0+codex.20260727192120`
+- 버전 캐시: `<CODEX_HOME>/plugins/cache/codex-must-work-local/codex-must-work/0.2.0+codex.20260727220405`
 - 작업 데이터: `<CODEX_HOME>/plugins/data/codex-must-work-codex-must-work-local`
 - Codex 설정: `<CODEX_HOME>/config.toml`
 

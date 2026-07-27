@@ -1,7 +1,12 @@
 import hashlib
 import json
+import os
+import queue
+import threading
 from io import StringIO
 from typing import final
+
+import pytest
 
 from scripts.daemon_models import SessionId, SessionRequest, StartRequest, ToolResult
 from scripts.mcp_protocol import StdioStreams
@@ -93,3 +98,46 @@ def test_run_server_discards_streaming_overlimit_and_continues() -> None:
     assert '"id":null' in messages[1]
     assert '"code":-32600' in messages[1]
     assert '"id":2' in messages[2]
+
+
+def test_run_server_replies_to_pipe_initialize_before_eof() -> None:
+    # Given
+    stdin_read_descriptor, stdin_write_descriptor = os.pipe()
+    stdout_read_descriptor, stdout_write_descriptor = os.pipe()
+    stdin = os.fdopen(stdin_read_descriptor, encoding="utf-8", newline="")
+    client = os.fdopen(stdin_write_descriptor, "w", encoding="utf-8", newline="")
+    server = os.fdopen(stdout_write_descriptor, "w", encoding="utf-8", newline="")
+    responses = os.fdopen(stdout_read_descriptor, encoding="utf-8", newline="")
+    received: queue.Queue[str] = queue.Queue()
+
+    server_worker = threading.Thread(
+        target=run_server,
+        args=(_TransportDaemon(), StdioStreams(stdin, server, StringIO()), _test_key()),
+        daemon=True,
+    )
+    response_worker = threading.Thread(
+        target=lambda: received.put(responses.readline()),
+        daemon=True,
+    )
+    server_worker.start()
+    response_worker.start()
+
+    try:
+        # When
+        _ = client.write(_request(1, "initialize", {"protocolVersion": "2025-11-25"}) + "\n")
+        client.flush()
+
+        # Then
+        try:
+            response = received.get(timeout=1.0)
+        except queue.Empty:
+            pytest.fail("MCP server waited for pipe EOF instead of replying to initialize")
+        assert '"id":1' in response
+        assert '"protocolVersion":"2025-11-25"' in response
+    finally:
+        client.close()
+        server_worker.join(timeout=1.0)
+        server.close()
+        response_worker.join(timeout=1.0)
+        stdin.close()
+        responses.close()

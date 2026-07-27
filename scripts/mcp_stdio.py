@@ -44,41 +44,31 @@ def serve_lines(server: McpLineServer, streams: StdioStreams) -> None:
             raise
 
 
-def _bounded_lines(stream: TextIO) -> Iterator[tuple[str, bool]]:  # noqa: C901
+def _bounded_lines(stream: TextIO) -> Iterator[tuple[str, bool]]:
     current: list[str] = []
     current_bytes = 0
     over_limit = False
     while True:
-        chunk = stream.read(8_192)
+        chunk = stream.readline(8_192)
         if chunk == "":
             if current or over_limit:
                 yield "".join(current), over_limit
             return
-        pieces = chunk.split("\n")
-        for piece in pieces[:-1]:
-            if not over_limit:
-                try:
-                    piece_bytes = len(piece.encode("utf-8"))
-                except UnicodeEncodeError:
-                    piece_bytes = MAX_RAW_LINE_BYTES + 1
-                if current_bytes + piece_bytes > MAX_RAW_LINE_BYTES:
-                    over_limit = True
-                    current.clear()
-                else:
-                    current.append(piece)
+        complete = chunk.endswith("\n")
+        piece = chunk[:-1] if complete else chunk
+        if not over_limit:
+            try:
+                piece_bytes = len(piece.encode("utf-8"))
+            except UnicodeEncodeError:
+                piece_bytes = MAX_RAW_LINE_BYTES + 1
+            if current_bytes + piece_bytes > MAX_RAW_LINE_BYTES:
+                over_limit = True
+                current.clear()
+            else:
+                current.append(piece)
+                current_bytes += piece_bytes
+        if complete:
             yield "".join(current), over_limit
             current.clear()
             current_bytes = 0
             over_limit = False
-        tail = pieces[-1]
-        if tail and not over_limit:
-            try:
-                tail_bytes = len(tail.encode("utf-8"))
-            except UnicodeEncodeError:
-                tail_bytes = MAX_RAW_LINE_BYTES + 1
-            if current_bytes + tail_bytes > MAX_RAW_LINE_BYTES:
-                over_limit = True
-                current.clear()
-            else:
-                current.append(tail)
-                current_bytes += tail_bytes
