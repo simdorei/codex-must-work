@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 HEAD: Final = "1" * 40
 TREE: Final = "2" * 40
-_CMW: Final = "codex-must-work@codex-must-work-local"
+_CMW: Final = "codex-must-work@simdorei"
 _LAZY: Final = "lazy-eng-study-codex@lazy-local"
 _PREFIX: Final = f"{_CMW}:hooks/hooks.json:"
 type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
@@ -85,7 +85,7 @@ def rollout_records(tmp_path: Path) -> tuple[Path, list[JsonObject], list[str]]:
     return rollout, records, ["번역: hello\nAnswer body", "SMOKE_OK"]
 
 
-def config(cache: Path, *, plugins: bool, cmw: bool) -> bytes:
+def config(_cache: Path, *, plugins: bool, cmw: bool) -> bytes:
     text = (
         "# keep 한글\r\n[notice]\r\nhide_full_access_warning = false # keep\r\n"
         f"[features]\r\nplugins = {str(plugins).lower()} # editable value only\r\n"
@@ -96,8 +96,9 @@ def config(cache: Path, *, plugins: bool, cmw: bool) -> bytes:
     if not cmw:
         return text.encode()
     text += (
-        '\r\n[marketplaces.codex-must-work-local]\r\nsource_type = "local"\r\n'
-        f"source = {json.dumps(str(cache))}\r\n"
+        '\r\n[marketplaces.simdorei]\r\nsource_type = "git"\r\n'
+        'source = "https://github.com/simdorei/codex-must-work.git"\r\n'
+        'ref = "main"\r\n'
         f'\r\n[plugins."{_CMW}"]\r\nenabled = true\r\n'
     )
     text += "".join(

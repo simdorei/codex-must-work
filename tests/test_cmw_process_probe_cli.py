@@ -15,6 +15,8 @@ def _command(tmp_path: Path) -> list[str]:
         str(tmp_path / "missing.jsonl"),
         "--session-id",
         "session-a",
+        "--activation-turn-id",
+        "turn-a",
         "--lifecycle",
         "start-stop",
         "--duration-seconds",

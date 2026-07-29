@@ -13,11 +13,17 @@ from typing import TYPE_CHECKING, Final, Never, cast
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from typing import BinaryIO
 
 from scripts.cache_security import read_source, secure_path
 from scripts.cache_types import CacheIdentity, identity
 from scripts.install_errors import InstallPluginError
-from scripts.runtime_archive import ArchiveExclusion, resolved_member, validated_archive_members
+from scripts.runtime_archive import (
+    ArchiveExclusion,
+    copy_exact_member,
+    resolved_member,
+    validated_archive_members,
+)
 from scripts.state_io import open_direct_file
 
 _DIRECTORY_MODE: Final = 0o700
@@ -81,22 +87,29 @@ def load_runtime_manifest(
 
 
 def materialize_archive(
-    archive: Path,
+    archive: BinaryIO,
     destination: Path,
     manifest: RuntimeTreeManifest,
 ) -> None:
     """Extract archive members as private regular files without preserving links."""
     root = destination / "python"
     root.mkdir(mode=_DIRECTORY_MODE)
+    expected_files = {entry.path: entry for entry in manifest.entries if entry.type == "file"}
     try:
-        with tarfile.open(archive, mode="r:gz") as bundle:
+        with tarfile.open(fileobj=archive, mode="r:gz") as bundle:
             members = validated_archive_members(bundle, manifest.excluded_bytecode)
             for relative, member in members:
                 source = resolved_member(member, members)
+                expected = expected_files.get(relative.as_posix())
+                if (
+                    expected is None
+                    or source.size != expected.size
+                    or bool(source.mode & 0o111) != expected.executable
+                ):
+                    _fail(_INVALID)
                 extracted = bundle.extractfile(source)
                 if extracted is None:
                     _fail(_INVALID)
-                data = extracted.read()
                 target = root.joinpath(*relative.parts)
                 target.parent.mkdir(mode=_DIRECTORY_MODE, parents=True, exist_ok=True)
                 mode = _EXECUTABLE_MODE if source.mode & 0o111 else _FILE_MODE
@@ -105,10 +118,12 @@ def materialize_archive(
                     os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0),
                     mode,
                 )
-                with os.fdopen(descriptor, "wb") as handle:
+                with extracted, os.fdopen(descriptor, "wb") as handle:
                     if os.name == "posix":
                         os.fchmod(handle.fileno(), mode)
-                    _ = handle.write(data)
+                    digest = copy_exact_member(extracted, handle, expected.size)
+                if digest != expected.sha256:
+                    _fail(_INVALID)
     except (OSError, tarfile.TarError) as error:
         raise InstallPluginError(_INVALID) from error
 

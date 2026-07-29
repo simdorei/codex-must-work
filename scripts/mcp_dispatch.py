@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, final
 
-from scripts.daemon_models import DaemonServiceError
-from scripts.mcp_arguments import parse_session_request, parse_start_request
+from scripts.mcp_arguments import (
+    parse_session_request,
+    parse_start_request,
+)
 from scripts.mcp_protocol import (
     DaemonBackend,
     JsonObject,
@@ -18,16 +20,27 @@ from scripts.mcp_protocol import (
     result_response,
 )
 from scripts.mcp_server_tools import (
+    AuthorizedSession,
     notification_setup_success,
-    reject_goal_companion,
     require_authorized,
     tool_error,
     tool_success,
 )
+from scripts.mcp_threshold_settings import call_threshold_settings
 from scripts.mcp_tool_descriptors import control_tool_descriptors
+from scripts.monitor_models import DaemonServiceError
+from scripts.state import StateError, state_root
+from scripts.threshold_settings import ThresholdSettingsStore
+from scripts.work_on_activation import (
+    ActivationAuthorizer,
+    ActivationIdentity,
+    ActivationTicketError,
+)
 
 if TYPE_CHECKING:
     from scripts.notification_setup import NotificationSetupLauncher
+
+_STATE_UNAVAILABLE = "monitoring_state_unavailable"
 
 
 @final
@@ -39,12 +52,16 @@ class McpServer:
         service: DaemonBackend,
         control_key: bytes,
         *,
+        activation_tickets: ActivationAuthorizer,
         notification_setup: NotificationSetupLauncher | None = None,
+        threshold_settings: ThresholdSettingsStore | None = None,
     ) -> None:
         """Create an uninitialized MCP session around the daemon."""
         self._service = service
         self._control_key = control_key
+        self._activation_tickets = activation_tickets
         self._notification_setup = notification_setup
+        self._threshold_settings = threshold_settings or ThresholdSettingsStore(state_root())
         self._initialize_received = False
         self._ready = False
 
@@ -101,12 +118,10 @@ class McpServer:
             "capabilities": {"tools": {"listChanged": False}},
             "serverInfo": {"name": "codex-must-work", "version": "0.2.0"},
             "instructions": (
-                "Use cmw.start only after explicit opt-in. Use cmw.complete after verified "
-                "completion and cmw.stop for a manual shutdown. When SessionStart context "
-                "codex_must_work_notifications.action is offer_setup, briefly offer Discord "
-                "alerts. If accepted, call cmw.notifications.setup; never request or pass a "
-                "webhook URL in chat or tool arguments. After the setup page saves successfully, "
-                "recommend restarting the Codex app once."
+                "Use cmw.work_on only after explicit $work-on invocation. "
+                "Use cmw.complete after verified "
+                "completion and cmw.stop for a manual shutdown. Never request or pass a "
+                "webhook URL in chat or tool arguments."
             ),
         }
 
@@ -115,39 +130,72 @@ class McpServer:
         arguments = request.params.get("arguments", {})
         if type(name) is not str or type(arguments) is not dict:
             raise JsonRpcError(-32600, "Invalid Request", request_id=request.request_id)
-        if name == "cmw.notifications.setup":
-            return self._call_notification_setup(arguments, request)
-        if name not in {"cmw.start", "cmw.stop", "cmw.status", "cmw.complete"}:
+        if name not in {
+            "cmw.work_on",
+            "cmw.stop",
+            "cmw.status",
+            "cmw.complete",
+            "cmw.settings",
+            "cmw.notifications.setup",
+        }:
             raise JsonRpcError(
                 -32600,
                 "Invalid Request",
                 request_id=request.request_id,
             )
-        require_authorized(self._control_key, arguments, request.request_id)
-        if name == "cmw.start":
-            reject_goal_companion(arguments, request.request_id)
-        return self._call_control(name, arguments, request)
+        authorized = require_authorized(self._control_key, arguments, request.request_id)
+        if name == "cmw.notifications.setup":
+            return self._call_notification_setup(arguments, request)
+        if name == "cmw.settings":
+            return self._call_threshold_settings(arguments, request)
+        return self._call_control(name, arguments, request, authorized)
 
     def _call_notification_setup(
         self,
         arguments: JsonObject,
         request: JsonRpcRequest,
     ) -> JsonObject:
-        if arguments:
+        allowed = {"session_id"}
+        if not set(arguments).issubset(allowed):
             raise JsonRpcError(-32602, "Invalid params", request_id=request.request_id)
         if self._notification_setup is None:
             raise JsonRpcError(-32600, "Invalid Request", request_id=request.request_id)
-        return notification_setup_success(self._notification_setup.start())
+        try:
+            launch = self._notification_setup.start()
+        except (OSError, StateError):
+            return tool_error(_STATE_UNAVAILABLE)
+        return notification_setup_success(launch)
+
+    def _call_threshold_settings(
+        self,
+        arguments: JsonObject,
+        request: JsonRpcRequest,
+    ) -> JsonObject:
+        return call_threshold_settings(
+            self._threshold_settings,
+            arguments,
+            request.request_id,
+        )
 
     def _call_control(
         self,
         name: str,
         arguments: JsonObject,
         request: JsonRpcRequest,
+        authorized: AuthorizedSession,
     ) -> JsonObject:
         try:
-            if name == "cmw.start":
-                result = self._service.start(parse_start_request(arguments, request.request_id))
+            if name == "cmw.work_on":
+                parsed = parse_start_request(arguments, request.request_id)
+                self._activation_tickets.consume(
+                    ActivationIdentity(
+                        authorized.session_id,
+                        parsed.activation_turn_id,
+                        str(parsed.request.transcript_path),
+                    ),
+                    authorized.capability,
+                )
+                result = self._service.start(parsed.request)
             elif name == "cmw.stop":
                 result = self._service.stop(parse_session_request(arguments, request.request_id))
             elif name == "cmw.status":
@@ -159,5 +207,7 @@ class McpServer:
             else:
                 raise AssertionError
         except DaemonServiceError as error:
+            return tool_error(error.reason_code)
+        except ActivationTicketError as error:
             return tool_error(error.reason_code)
         return tool_success(result)

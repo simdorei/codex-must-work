@@ -6,12 +6,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, assert_never
 
 from scripts.event_source import EventKind
-from scripts.silence import ProgressKind, record_progress
+from scripts.stall_detector import ProgressKind, record_progress
 
 if TYPE_CHECKING:
     from scripts.event_source import ObservedEvent
-    from scripts.silence import SilenceState
-    from scripts.watcher_models import MonitorTarget, RuntimeTarget
+    from scripts.monitor_target import MonitorTarget, RuntimeTarget
+    from scripts.stall_detector import SilenceState
 
 
 @dataclass(frozen=True, slots=True)

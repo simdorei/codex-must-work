@@ -45,8 +45,8 @@ if [ "$#" -eq 2 ] && [ "$1" = "features" ] && [ "$2" = "list" ]; then
 fi
 if [ "$#" -eq 6 ] && [ "$1" = "plugin" ] && [ "$2" = "list" ] &&
     [ "$3" = "--available" ] && [ "$4" = "--json" ] &&
-    [ "$5" = "--marketplace" ] && [ "$6" = "codex-must-work-local" ]; then
-    marketplace='[{"name":"codex-must-work","marketplace":"codex-must-work-local",'
+    [ "$5" = "--marketplace" ] && [ "$6" = "simdorei" ]; then
+    marketplace='[{"name":"codex-must-work","marketplace":"simdorei",'
     marketplace=$marketplace'"source":{"source":"local","path":"./"}}]'
     printf '%s\\n' "$marketplace"
     exit 0

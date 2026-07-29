@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Protocol, cast, override
 
@@ -54,7 +54,6 @@ class SessionLocator:
     transcript_path: Path
     plugin_root: Path
     plugin_data: Path
-    control_capability: str = field(repr=False)
     permission_mode: str | None = None
 
 
@@ -73,7 +72,7 @@ def parse_output_path(raw: Path) -> Path:
 
 
 def load_session_locator(rollout: Path, session_id: str) -> SessionLocator:
-    """Read the exact hook locator into memory while keeping its bearer secret private."""
+    """Read the exact non-secret hook locator into memory."""
     resolved_rollout = rollout.resolve(strict=True)
     locator: SessionLocator | None = None
     with resolved_rollout.open(encoding="utf-8") as stream:
@@ -137,7 +136,6 @@ def _locator_from_context(text: str) -> SessionLocator | None:
     transcript = raw.get("transcript_path")
     plugin_root = raw.get("plugin_root")
     plugin_data = raw.get("plugin_data")
-    capability = raw.get("control_capability")
     permission = raw.get("permission_mode")
     if not (
         type(session_id) is str
@@ -148,8 +146,6 @@ def _locator_from_context(text: str) -> SessionLocator | None:
         and plugin_root
         and type(plugin_data) is str
         and plugin_data
-        and type(capability) is str
-        and capability
     ):
         return None
     if permission is not None and type(permission) is not str:
@@ -159,7 +155,6 @@ def _locator_from_context(text: str) -> SessionLocator | None:
         transcript_path=Path(transcript),
         plugin_root=Path(plugin_root).resolve(strict=False),
         plugin_data=Path(plugin_data).resolve(strict=False),
-        control_capability=capability,
         permission_mode=permission,
     )
 

@@ -133,7 +133,6 @@ def test_locator_parser_uses_exact_session_hook_record(tmp_path: Path) -> None:
             "transcript_path": str(rollout.resolve()),
             "plugin_root": str((tmp_path / "plugin").resolve()),
             "plugin_data": str((tmp_path / "data").resolve()),
-            "control_capability": "x" * 43,
             "permission_mode": "bypassPermissions",
             "package_digest_sha256": PACKAGE_DIGEST,
         }
@@ -207,7 +206,6 @@ def test_installed_generation_is_verified_before_mcp_execution(
         tmp_path / "data",
         "dontAsk",
         PACKAGE_DIGEST,
-        "x" * 43,
     )
 
     def reject(_home: Path, _root: Path) -> Never:
@@ -249,7 +247,6 @@ def test_cmw_status_timeout_is_bounded_and_redacted(
         tmp_path / "data",
         "dontAsk",
         PACKAGE_DIGEST,
-        "x" * 43,
     )
 
     def timeout(*_args: str, **_kwargs: str) -> subprocess.CompletedProcess[str]:

@@ -9,7 +9,6 @@ from scripts.mcp_server import McpServer, configure_plugin_data
 from tests.mcp_server_test_support import (
     FakeActivationTickets,
     FakeDaemon,
-    capability,
     control_key,
     ready_server,
     request,
@@ -88,10 +87,11 @@ def test_tools_list_exposes_only_cmw_control_tools_after_initialized() -> None:
         assert isinstance(schema, dict)
         required = schema.get("required")
         assert isinstance(required, list)
-        assert "control_capability" in required
+        assert "control_capability" not in required
+        properties = schema.get("properties")
+        assert isinstance(properties, dict)
+        assert "control_capability" not in properties
         if tool["name"] == "cmw.work_on":
-            properties = schema.get("properties")
-            assert isinstance(properties, dict)
             assert "warning_after_ms" in properties
             assert "critical_after_ms" in properties
             assert "auto_restart" not in properties
@@ -111,7 +111,6 @@ def test_legacy_cmw_start_is_not_a_public_tool() -> None:
                 "name": "cmw.start",
                 "arguments": {
                     "session_id": "session-a",
-                    "control_capability": capability("session-a"),
                 },
             },
         )

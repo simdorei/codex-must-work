@@ -107,6 +107,15 @@ def test_release_configuration_paths_are_allowlisted() -> None:
     assert is_allowed(".codex-plugin/plugin.json")
     assert is_allowed(".gitignore")
     assert is_allowed(".mcp.json")
+    assert is_allowed("LICENSE")
+    assert is_allowed("README.md")
+    assert is_allowed("THIRD_PARTY_NOTICES.md")
+    assert is_allowed("install.ps1")
+    assert is_allowed("install.sh")
+    assert is_allowed("pyproject.toml")
+    assert is_allowed("uninstall.ps1")
+    assert is_allowed("uninstall.sh")
+    assert is_allowed("uv.lock")
 
 
 def test_secret_is_read_from_index_not_working_tree(tmp_path: Path) -> None:
@@ -189,6 +198,23 @@ def test_binary_blob_and_oversize_blob_fail_closed(tmp_path: Path) -> None:
     result = run(path2, "--cached", "--redact")
     assert result.returncode == 1
     assert "OVERSIZE_BLOB" in result.stdout
+
+
+def test_exact_release_launcher_binary_is_scanned_from_index(tmp_path: Path) -> None:
+    path = repo(tmp_path)
+    relative = "runtime/launch-python.exe"
+    write_stage(path, relative, b"MZ\x00safe launcher")
+    safe = run(path, "--cached", "--redact")
+    write_stage(
+        path,
+        relative,
+        ("MZ\x00token=" + joined("sk-", "live-12345678901234567890")).encode(),
+    )
+    secret = run(path, "--cached", "--redact")
+    assert safe.returncode == 0
+    assert secret.returncode == 1
+    assert secret.stdout.strip() == f"SECRET_OPENAI_TOKEN {relative}"
+    assert secret.stderr == ""
 
 
 def test_required_flags_and_non_repo_reject_without_git_stderr(tmp_path: Path) -> None:

@@ -56,7 +56,7 @@ def validate_installed_generation(
     if (
         len(parents) < 5
         or parents[0].name != "codex-must-work"
-        or parents[1].name != "codex-must-work-local"
+        or parents[1].name != "simdorei"
         or parents[2].name != "cache"
         or parents[3].name != "plugins"
     ):
@@ -79,7 +79,7 @@ def validate_installed_generation(
 
 
 def read_cmw_status(locator: PreflightLocator) -> tuple[bool, bool]:
-    """Call the installed MCP status tool with its in-memory capability."""
+    """Call the installed MCP status tool with non-secret session identity."""
     command, arguments, cwd, child_env = _mcp_command(locator.plugin_root)
     requests: tuple[dict[str, JsonValue], ...] = (
         {
@@ -99,10 +99,7 @@ def read_cmw_status(locator: PreflightLocator) -> tuple[bool, bool]:
             "method": "tools/call",
             "params": {
                 "name": "cmw.status",
-                "arguments": {
-                    "session_id": locator.session_id,
-                    "control_capability": locator.control_capability,
-                },
+                "arguments": {"session_id": locator.session_id},
             },
         },
     )

@@ -11,6 +11,7 @@ import stat
 from string import ascii_letters, digits
 from typing import TYPE_CHECKING, Final, final, override
 
+from scripts.marketplace_identity import PLUGIN_ID
 from scripts.private_root import ensure_private_root
 from scripts.state_io import UnsafeStatePathError, open_direct_file
 
@@ -23,7 +24,7 @@ _CAPABILITY_CHARS: Final = 43
 _MAX_SESSION_BYTES: Final = 65_536
 _FILE_MODE: Final = stat.S_IRUSR | stat.S_IWUSR
 _DOMAIN_PREFIX: Final = b"cmw-control-v1\\0"
-_DOMAIN_SUFFIX: Final = b"\\0codex-must-work@codex-must-work-local"
+_DOMAIN_SUFFIX: Final = b"\\0" + PLUGIN_ID.encode()
 _BASE64URL_CHARS: Final = frozenset(ascii_letters + digits + "-_")
 _RECOVERY_REQUIRED: Final = "control_key_recovery_required"
 _KEY_INVALID: Final = "control_key_invalid"

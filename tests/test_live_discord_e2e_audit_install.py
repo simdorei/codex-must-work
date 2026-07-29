@@ -2,37 +2,23 @@ from __future__ import annotations
 
 import json
 import shutil
-import sqlite3
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from scripts import hook_event as hook_event_module
 from scripts import install_plugin
+from scripts import private_root as private_root_module
 from scripts.cache_types import identity
-from scripts.calibration import CalibrationRecommendation
 from scripts.codex_compatibility import CompatibilityResult
-from scripts.durations import Milliseconds
-from scripts.hook_event import process_hook
-from scripts.hook_payload import SessionLocator, serialize_locator
 from scripts.hook_trust import read_plugin_manifest
 from scripts.installer_mcp_runtime import McpRuntimePublication
-from tests import live_discord_e2e_audit_runtime as runtime
+from scripts.session_hook import process_session_start
 from tests.hook_fixture import hook_event
-from tests.live_discord_e2e_audit_preflight import (
-    evaluate_preflight,
-    load_mapping,
-    load_preflight_locator,
-)
 from tests.live_discord_e2e_audit_records import decode_json
-from tests.live_discord_e2e_audit_runtime import collect_preflight
 
 if TYPE_CHECKING:
-    from datetime import datetime
-
     import pytest
 
-    from scripts.state_io import JsonValue
 
 THREAD = "1528639615592828980"
 
@@ -67,19 +53,14 @@ def test_isolated_trusted_install_locator_and_read_only_preflight(
     installed = install_plugin.install(home, source)
     assert installed.install_ok
     plugin_root = _installed_root(home, source)
-    plugin_data = home / "plugins" / "data" / "codex-must-work-codex-must-work-local"
+    plugin_data = home / "plugins" / "data" / "codex-must-work-simdorei"
+    active_state_root = home / "codex-must-work"
+    private_root_module.ensure_private_root(active_state_root)
+    assert (active_state_root / ".private-root-v1").read_bytes() == b"private-root-v1\n"
     rollout = home / "sessions" / "rollout.jsonl"
     rollout.parent.mkdir()
 
-    def scan(_codex_home: Path, _now: datetime) -> CalibrationRecommendation:
-        return CalibrationRecommendation(20, Milliseconds(60_000), Milliseconds(120_000))
-
-    monkeypatch.setattr(
-        hook_event_module,
-        "_scan_history",
-        scan,
-    )
-    located = process_hook(
+    located = process_session_start(
         hook_event(
             "SessionStart",
             transcript_path=str(rollout),
@@ -89,24 +70,8 @@ def test_isolated_trusted_install_locator_and_read_only_preflight(
         plugin_root=plugin_root,
         plugin_data=plugin_data,
     )
-    assert isinstance(located, SessionLocator)
-    _write_locator_rollout(rollout, located)
-    parsed = load_preflight_locator(rollout)
-    mapped = _mapped_thread(tmp_path)
-    monkeypatch.setenv("CODEX_HOME", str(home))
-
-    def read_app(_thread_id: str) -> tuple[str, None]:
-        return "session-1", None
-
-    monkeypatch.setattr(runtime, "read_app_server", read_app)
-
-    snapshot = collect_preflight(parsed, THREAD, mapped, located.package_digest_sha256)
-    result = evaluate_preflight(snapshot)
-
-    assert result.ready is True
-    assert snapshot.actual_package_digest_sha256 == located.package_digest_sha256
-    assert snapshot.cmw_authenticated is True
-    assert snapshot.cmw_active is False
+    assert located is None
+    assert not rollout.exists()
 
 
 def _lightweight_candidate(tmp_path: Path) -> Path:
@@ -135,7 +100,7 @@ def _lightweight_candidate(tmp_path: Path) -> Path:
                     "-B",
                     "scripts/mcp_server.py",
                     "--plugin-data",
-                    "../../../../data/codex-must-work-codex-must-work-local",
+                    "../../../../data/codex-must-work-simdorei",
                 ],
                 "env": {"PYTHONDONTWRITEBYTECODE": "1", "PYTHONUTF8": "1"},
             }
@@ -150,39 +115,4 @@ def _lightweight_candidate(tmp_path: Path) -> Path:
 
 def _installed_root(home: Path, source: Path) -> Path:
     version = read_plugin_manifest(source).version
-    return home / "plugins" / "cache" / "codex-must-work-local" / "codex-must-work" / version
-
-
-def _write_locator_rollout(path: Path, locator: SessionLocator) -> None:
-    envelope = decode_json(serialize_locator(locator))
-    assert isinstance(envelope, dict)
-    output = envelope["hookSpecificOutput"]
-    assert isinstance(output, dict)
-    context = output["additionalContext"]
-    assert isinstance(context, str)
-    rows: list[dict[str, JsonValue]] = [
-        {"type": "session_meta", "payload": {"id": locator.session_id}},
-        {
-            "type": "event_msg",
-            "payload": {
-                "type": "hook_completed",
-                "run": {
-                    "event_name": "session_start",
-                    "entries": [{"kind": "context", "text": context}],
-                },
-            },
-        },
-    ]
-    _ = path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
-
-
-def _mapped_thread(tmp_path: Path) -> str:
-    database = tmp_path / "discord_mirror.sqlite"
-    with sqlite3.connect(database) as connection:
-        _ = connection.execute(
-            "CREATE TABLE mirror_threads (codex_thread_id TEXT, discord_thread_id INTEGER)"
-        )
-        _ = connection.execute(
-            "INSERT INTO mirror_threads VALUES (?, ?)", ("session-1", int(THREAD))
-        )
-    return load_mapping(database, THREAD)
+    return home / "plugins" / "cache" / "simdorei" / "codex-must-work" / version

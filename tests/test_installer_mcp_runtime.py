@@ -55,7 +55,7 @@ def archive_fixture(
     if platform is RuntimePlatform.POSIX:
         wrapper = (
             b"#!/bin/sh\nexport PYTHONDONTWRITEBYTECODE=1\n"
-            b'exec "$(dirname -- "$0")/bin/python3" -B "$@"\n'
+            b'exec "$(dirname -- "$0")/bin/python3" -I -B "$@"\n'
         )
         files["python"] = {
             "executable": True,
@@ -142,6 +142,25 @@ def test_runtime_is_extracted_once_and_reused_by_identity(tmp_path: Path) -> Non
     assert (created.path / "python.exe").read_bytes() == b"runtime"
 
 
+def test_generated_pycache_is_removed_before_reusing_runtime(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    data = tmp_path / "data"
+    data.mkdir()
+    spec = archive_fixture(source, executable="python/python.exe")
+    created = prepare_mcp_runtime(source, data, spec)
+    bytecode = created.path / "__pycache__" / "generated.pyc"
+    bytecode.parent.mkdir()
+    _ = bytecode.write_bytes(b"generated")
+
+    reused = prepare_mcp_runtime(source, data, spec)
+
+    assert reused.created_by_run is False
+    assert reused.path == created.path
+    assert reused.identity == created.identity
+    assert not bytecode.exists()
+    assert (reused.path / "python.exe").read_bytes() == b"runtime"
+
+
 def test_posix_runtime_gets_one_exec_wrapper_at_common_path(tmp_path: Path) -> None:
     # Given
     source = tmp_path / "source"
@@ -156,7 +175,7 @@ def test_posix_runtime_gets_one_exec_wrapper_at_common_path(tmp_path: Path) -> N
     wrapper = publication.path / "python"
     assert wrapper.read_text(encoding="utf-8") == (
         "#!/bin/sh\nexport PYTHONDONTWRITEBYTECODE=1\n"
-        'exec "$(dirname -- "$0")/bin/python3" -B "$@"\n'
+        'exec "$(dirname -- "$0")/bin/python3" -I -B "$@"\n'
     )
     if os.name != "nt":
         assert wrapper.stat().st_mode & 0o111 == 0o111

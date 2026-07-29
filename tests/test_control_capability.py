@@ -107,11 +107,7 @@ def test_capability_uses_exact_domain_and_canonical_base64url(tmp_path: Path) ->
     # Given
     key = provision_control_key(tmp_path / "plugin-data", tmp_path / "state")
     session_id = "session-a"
-    message = (
-        b"cmw-control-v1\\0"
-        + session_id.encode("utf-8")
-        + b"\\0codex-must-work@codex-must-work-local"
-    )
+    message = b"cmw-control-v1\\0" + session_id.encode("utf-8") + b"\\0codex-must-work@simdorei"
     expected_digest = hmac.new(key, message, hashlib.sha256).digest()
 
     # When

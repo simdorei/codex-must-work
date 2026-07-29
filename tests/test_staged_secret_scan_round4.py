@@ -160,6 +160,49 @@ def test_true_unborn_symbolic_head_uses_empty_tree(tmp_path: Path) -> None:
     assert result.stderr == ""
 
 
+def test_malformed_nested_git_does_not_fall_back_to_parent_repository(
+    tmp_path: Path,
+) -> None:
+    parent = repo(tmp_path)
+    child = parent / "nested-source"
+    _ = (child / ".git").mkdir(parents=True)
+    _ = (child / ".git" / "HEAD").write_text(
+        "not-a-valid-head\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    result = subprocess.run(  # noqa: S603
+        (str(PYTHON), str(ROOT / "tests" / "staged_secret_scan.py"), "--cached", "--redact"),
+        cwd=child,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert result.returncode == 1
+    assert result.stdout.strip() == "NOT_REPOSITORY ."
+    assert result.stderr == ""
+
+
+def test_non_repository_nested_source_does_not_fall_back_to_parent_repository(
+    tmp_path: Path,
+) -> None:
+    parent = repo(tmp_path)
+    child = parent / "plain-source"
+    _ = child.mkdir()
+    result = subprocess.run(  # noqa: S603
+        (str(PYTHON), str(ROOT / "tests" / "staged_secret_scan.py"), "--cached", "--redact"),
+        cwd=child,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert result.returncode == 1
+    assert result.stdout.strip() == "NOT_REPOSITORY ."
+    assert result.stderr == ""
+
+
 def test_untrusted_per_call_git_environment_is_rejected(tmp_path: Path) -> None:
     path = repo(tmp_path)
     with pytest.raises(scanner_git.ScanError) as caught:

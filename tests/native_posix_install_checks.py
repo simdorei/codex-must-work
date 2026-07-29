@@ -25,8 +25,8 @@ type TomlValue = (
     str | int | float | bool | datetime | date | datetime_time | list[TomlValue] | TomlTable
 )
 
-_PLUGIN_ID: Final = "codex-must-work@codex-must-work-local"
-_MARKETPLACE: Final = "codex-must-work-local"
+_PLUGIN_ID: Final = "codex-must-work@simdorei"
+_MARKETPLACE: Final = "simdorei"
 
 
 class _JsonLoader(Protocol):
@@ -87,7 +87,7 @@ def first_install(layout: NativeLayout, home: Path, checks: Checks) -> Path:
     )
     cache = _validate_cache(layout, home, checks)
     _validate_config(home, cache, checks)
-    data = home / "plugins" / "data" / "codex-must-work-codex-must-work-local"
+    data = home / "plugins" / "data" / "codex-must-work-simdorei"
     checks.require(data.resolve(strict=True) == data, _check("plugin_data_identity_exact"))
     checks.require(stat.S_IMODE(data.lstat().st_mode) == 0o700, _check("plugin_data_mode_exact"))
     stage = home / "plugins" / ".cmw-install-staging" / "codex-must-work"

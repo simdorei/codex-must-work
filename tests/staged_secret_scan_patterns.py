@@ -10,11 +10,20 @@ ALLOWED_EXACT: Final[frozenset[str]] = frozenset(
         ".codex-plugin/plugin.json",
         ".gitignore",
         ".mcp.json",
+        "LICENSE",
         "README.md",
+        "THIRD_PARTY_NOTICES.md",
         ".github/workflows/installer-posix.yml",
+        "install.ps1",
+        "install.sh",
+        "pyproject.toml",
+        "uninstall.ps1",
+        "uninstall.sh",
+        "uv.lock",
     }
 )
 ALLOWED_PREFIXES: Final[tuple[str, ...]] = ("hooks/", "runtime/", "scripts/", "skills/", "tests/")
+SCANNABLE_BINARY_EXACT: Final[frozenset[str]] = frozenset({"runtime/launch-python.exe"})
 FORBIDDEN_BASENAMES: Final[frozenset[str]] = frozenset(
     {".env", "secrets", "secret", "credentials", "credential", "id_rsa", "id_ed25519"}
 )
@@ -75,6 +84,11 @@ def finding(blob: bytes) -> str | None:
 def is_allowed(path: str) -> bool:
     """Return whether a path belongs to the explicit release allowlist."""
     return path in ALLOWED_EXACT or path.startswith(ALLOWED_PREFIXES)
+
+
+def is_scannable_binary(path: str) -> bool:
+    """Return whether a required generated binary may receive pattern scanning."""
+    return path in SCANNABLE_BINARY_EXACT
 
 
 def is_forbidden_name(path: str) -> bool:

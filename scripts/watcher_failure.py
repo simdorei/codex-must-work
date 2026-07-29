@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from scripts.diagnostics import DiagnosticCode, MonitorState
+from scripts.monitor_diagnostics import DiagnosticCode, MonitorState
+from scripts.monitor_state import runtime_target_from_values
 from scripts.state import mutate_existing_state
 from scripts.watcher_diagnostics import TargetDiagnostic, append_target_diagnostic
-from scripts.watcher_state import runtime_target_from_values
 
 if TYPE_CHECKING:
     from datetime import datetime
     from pathlib import Path
 
+    from scripts.monitor_target import RuntimeTarget
     from scripts.state_io import JsonValue
-    from scripts.watcher_models import RuntimeTarget
 
 
 def record_rollout_failure(

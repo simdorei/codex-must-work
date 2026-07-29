@@ -7,6 +7,7 @@ from scripts.calibration import CalibrationRecommendation, CalibrationStatus
 from scripts.calibration_cli import apply_decision
 from scripts.calibration_state import CalibrationEnvironment, load_or_calibrate
 from scripts.durations import Milliseconds
+from scripts.threshold_settings import ThresholdMode, ThresholdSettingsStore
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -37,3 +38,7 @@ def test_apply_decision_accepts_only_an_explicit_answer(tmp_path: Path) -> None:
     assert accepted.status is CalibrationStatus.ACCEPTED
     assert accepted.warning_after_ms == 120_000
     assert accepted.restart_after_ms == 300_000
+    selected = ThresholdSettingsStore(root).load()
+    assert selected.mode is ThresholdMode.RECOMMENDED
+    assert selected.warning_after_ms == 120_000
+    assert selected.critical_after_ms == 300_000

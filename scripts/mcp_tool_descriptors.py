@@ -15,47 +15,63 @@ def control_tool_descriptors(*, include_notification_setup: bool = False) -> lis
         "minLength": 1,
         "maxLength": 65_536,
     }
-    capability: dict[str, JsonValue] = {
-        "type": "string",
-        "minLength": 43,
-        "maxLength": 43,
-    }
     control: dict[str, JsonValue] = {
         "type": "object",
         "properties": {
             "session_id": session,
-            "control_capability": capability,
         },
-        "required": ["session_id", "control_capability"],
+        "required": ["session_id"],
         "additionalProperties": False,
     }
     start: dict[str, JsonValue] = {
         "type": "object",
         "properties": {
             "session_id": session,
-            "control_capability": capability,
             "transcript_path": session,
-            "permission_mode": {"type": ["string", "null"]},
-            "auto_restart": {"type": "boolean", "default": True},
-            "goal_companion": {"type": "boolean", "default": False},
-            "observe_only": {"type": "boolean", "default": False},
-            "warning_after_ms": {"type": "integer", "minimum": 1},
-            "restart_after_ms": {"type": "integer", "minimum": 1},
-            "message_preset": {"type": "string"},
+            "activation_turn_id": session,
+            "warning_after_ms": {"type": "integer", "minimum": 1, "default": 300_000},
+            "critical_after_ms": {"type": "integer", "minimum": 1, "default": 600_000},
         },
-        "required": ["session_id", "control_capability", "transcript_path"],
+        "required": [
+            "session_id",
+            "transcript_path",
+            "activation_turn_id",
+        ],
         "additionalProperties": False,
     }
     definitions = (
-        ("cmw.start", "Enable managed CMW for one explicit task.", start),
-        ("cmw.stop", "Manually stop CMW and its owned turn.", control),
+        ("cmw.work_on", "Monitor one explicit task for lifecycle notifications.", start),
+        ("cmw.stop", "Stop monitoring one explicit task.", control),
         ("cmw.status", "Read the current CMW task status.", control),
-        ("cmw.complete", "Request verified-completion shutdown.", control),
+        ("cmw.complete", "Record completion and stop monitoring.", control),
     )
     descriptors: list[JsonValue] = [
         {"name": name, "description": description, "inputSchema": schema}
         for name, description, schema in definitions
     ]
+    descriptors.append(
+        {
+            "name": "cmw.settings",
+            "description": (
+                "Show or select default, recommended, or custom 병목 의심 and 심각 정체 thresholds."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session_id": session,
+                    "action": {
+                        "type": "string",
+                        "enum": ["show", "default", "recommended", "custom"],
+                        "default": "show",
+                    },
+                    "warning_after_ms": {"type": "integer", "minimum": 1},
+                    "critical_after_ms": {"type": "integer", "minimum": 1},
+                },
+                "required": ["session_id"],
+                "additionalProperties": False,
+            },
+        }
+    )
     if include_notification_setup:
         descriptors.append(
             {
@@ -64,12 +80,7 @@ def control_tool_descriptors(*, include_notification_setup: bool = False) -> lis
                     "Open a short-lived local page for Discord webhook setup. "
                     "Never pass a webhook URL as a tool argument."
                 ),
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {},
-                    "required": [],
-                    "additionalProperties": False,
-                },
+                "inputSchema": control,
             }
         )
     return descriptors

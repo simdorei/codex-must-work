@@ -26,7 +26,6 @@ def _installed_root(tmp_path: Path) -> Path:
 def _write_rollout(
     path: Path,
     root: Path,
-    capability: str = "S" * 43,
     *,
     transcript_path: Path | None = None,
 ) -> None:
@@ -37,7 +36,6 @@ def _write_rollout(
                 "transcript_path": str((transcript_path or path).resolve()),
                 "plugin_root": str(root),
                 "plugin_data": str(root.parent / "data"),
-                "control_capability": capability,
                 "permission_mode": "never",
             }
         }
@@ -55,22 +53,19 @@ def _write_rollout(
     _ = path.write_text(json.dumps(record) + "\n", encoding="utf-8")
 
 
-def test_locator_reads_exact_session_and_rollout_without_exposing_capability(
+def test_locator_reads_exact_session_and_rollout(
     tmp_path: Path,
 ) -> None:
     # Given
     rollout = tmp_path / "rollout.jsonl"
     root = _installed_root(tmp_path)
-    secret = "Q" * 43
-    _write_rollout(rollout, root, secret)
+    _write_rollout(rollout, root)
 
     # When
     locator = load_session_locator(rollout, "session-a")
 
     # Then
     assert locator.plugin_root == root
-    assert locator.control_capability == secret
-    assert secret not in repr(locator)
 
 
 @pytest.mark.parametrize("mutation", ["session", "rollout", "root"])
@@ -91,9 +86,8 @@ def test_locator_rejects_stale_or_indirect_identity(
         (root / "scripts" / "mcp_server.py").unlink()
 
     # When / Then
-    with pytest.raises(LocatorError) as raised:
+    with pytest.raises(LocatorError):
         _ = load_session_locator(rollout, session)
-    assert "Q" * 43 not in str(raised.value)
 
 
 @pytest.mark.parametrize(

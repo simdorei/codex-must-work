@@ -3,7 +3,7 @@ from __future__ import annotations
 from threading import Event, Thread
 from typing import TYPE_CHECKING
 
-from scripts.diagnostics import DiagnosticCode
+from scripts.monitor_diagnostics import DiagnosticCode
 from scripts.setup import disable_session
 from scripts.state import (
     JsonValue,
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     import pytest
 
 
-def test_watcher_warns_once_then_records_restart_unavailable(tmp_path: Path) -> None:
+def test_watcher_warns_once_then_records_critical_stall(tmp_path: Path) -> None:
     root, rollout, _ = _state(tmp_path)
     engine = WatcherEngine(root)
 
@@ -46,7 +46,7 @@ def test_watcher_warns_once_then_records_restart_unavailable(tmp_path: Path) -> 
 
     codes = _codes(root)
     assert codes.count(DiagnosticCode.OBSERVABLE_PROGRESS_SILENCE.value) == 1
-    assert codes.count(DiagnosticCode.RESTART_UNAVAILABLE.value) == 1
+    assert codes.count(DiagnosticCode.BOTTLENECK_CRITICAL.value) == 1
     persisted = "".join(
         path.read_text(encoding="utf-8") for path in root.rglob("*") if path.is_file()
     )
@@ -182,7 +182,7 @@ def test_disable_completes_while_rollout_read_is_blocked(
     assert not cursor_path(root, "session-secret").exists()
 
 
-def test_systemic_sibling_silence_never_auto_restarts(tmp_path: Path) -> None:
+def test_systemic_sibling_silence_records_critical_without_restart(tmp_path: Path) -> None:
     root, _, _ = _state(tmp_path, children=2)
     engine = WatcherEngine(root)
 
@@ -190,10 +190,10 @@ def test_systemic_sibling_silence_never_auto_restarts(tmp_path: Path) -> None:
     assert engine.tick(90.0, _WALL_TIME) is True
     assert engine.tick(2_380.0, _WALL_TIME) is True
 
-    assert _codes(root).count(DiagnosticCode.RESTART_UNAVAILABLE.value) == 2
+    assert _codes(root).count(DiagnosticCode.BOTTLENECK_CRITICAL.value) == 2
 
 
-def test_one_silent_managed_target_requests_exact_owned_turn_restart(tmp_path: Path) -> None:
+def test_legacy_managed_fields_cannot_make_watcher_request_restart(tmp_path: Path) -> None:
     root, _, path = _state(tmp_path, children=0, parent=True)
     document = load_state(root, path)
     values = dict(document.values)
@@ -216,10 +216,9 @@ def test_one_silent_managed_target_requests_exact_owned_turn_restart(tmp_path: P
 
     runtime = load_state(root, path).values
     request = runtime["restart_request"]
-    assert isinstance(request, dict)
-    assert request["turn_id"] == "turn-parent"
-    assert request["target_generation"] == 1
-    assert _codes(root).count(DiagnosticCode.RESTART_REQUESTED.value) == 1
+    assert request is None
+    assert _codes(root).count(DiagnosticCode.BOTTLENECK_CRITICAL.value) == 1
+    assert "restart_requested" not in _codes(root)
 
 
 def test_active_child_suppresses_whole_parent_turn_restart(tmp_path: Path) -> None:
@@ -246,10 +245,10 @@ def test_active_child_suppresses_whole_parent_turn_restart(tmp_path: Path) -> No
 
     runtime = load_state(root, path).values
     assert runtime["restart_request"] is None
-    assert _codes(root).count(DiagnosticCode.RESTART_REQUESTED.value) == 0
+    assert "restart_requested" not in _codes(root)
 
 
-def test_managed_auto_restart_times_out_a_tool_that_never_returns(tmp_path: Path) -> None:
+def test_open_tool_wait_never_requests_restart(tmp_path: Path) -> None:
     root, _, path = _state(tmp_path, children=0, parent=True)
     document = load_state(root, path)
     values = dict(document.values)
@@ -275,5 +274,5 @@ def test_managed_auto_restart_times_out_a_tool_that_never_returns(tmp_path: Path
     assert engine.tick(301.0, _WALL_TIME) is True
 
     request = load_state(root, path).values["restart_request"]
-    assert isinstance(request, dict)
-    assert request["turn_id"] == "turn-parent"
+    assert request is None
+    assert _codes(root).count(DiagnosticCode.BOTTLENECK_CRITICAL.value) == 0

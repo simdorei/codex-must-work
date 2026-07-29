@@ -122,7 +122,8 @@ def _assert_record(lines: list[str], source: str, home: str, temp_root: str, *, 
         home,
     ]
     plugin_data = lines[5]
-    assert lines[6:8] == [source, "True"]
+    expected_bootstrap_exists = "True" if posix else "False"
+    assert lines[6:8] == [source, expected_bootstrap_exists]
     parent = str(PurePosixPath(plugin_data).parent) if posix else str(Path(plugin_data).parent)
     name = PurePosixPath(plugin_data).name if posix else Path(plugin_data).name
     assert parent == temp_root

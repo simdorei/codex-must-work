@@ -16,12 +16,13 @@ from scripts.installer_observation import (
     ConfigObservation,
     PriorState,
     cache_matches_observation,
-    disable_local_plugin_only,
+    disable_plugin_only,
     observation_matches_prior,
     observe_config,
     prior_cache_still_valid,
 )
 from scripts.installer_result import InstallResult
+from scripts.marketplace_identity import MARKETPLACE_NAME
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -29,7 +30,7 @@ if TYPE_CHECKING:
     from scripts.cache_types import CachePublication
     from scripts.installer_lock import InstallerLease
 
-_MARKETPLACE = "codex-must-work-local"
+_MARKETPLACE = MARKETPLACE_NAME
 _EXTERNAL_CONFLICT = "external_config_conflict_after_failure"
 
 
@@ -68,7 +69,7 @@ def recover_install(
             conflict = True
             cleanup_error = "codex_config_concurrent_change"
         if not current.plugin_disabled:
-            current = disable_local_plugin_only(lease.home, lease)
+            current = disable_plugin_only(lease.home, lease)
         owned_disabled = current.snapshot
         removed, runtime_removed, data_removed, cleanup_failure = _cleanup_created(
             publication,

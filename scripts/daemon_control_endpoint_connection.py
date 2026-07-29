@@ -24,7 +24,9 @@ if TYPE_CHECKING:
 
 _READ_CHUNK_BYTES: Final = 8_192
 _PARSE_ERROR_CODE: Final = -32700
-_CONTROL_TOOLS: Final = frozenset({"cmw.start", "cmw.stop", "cmw.status", "cmw.complete"})
+_CONTROL_TOOLS: Final = frozenset(
+    {"cmw.work_on", "cmw.stop", "cmw.status", "cmw.complete", "cmw.settings"}
+)
 _INITIALIZE: Final = (
     '{"jsonrpc":"2.0","id":0,"method":"initialize",'
     '"params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{}}}'

@@ -4,7 +4,7 @@ import json
 import socket
 import threading
 import time
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING, final, override
 
 import pytest
 
@@ -22,6 +22,28 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from scripts.mcp_protocol import DaemonBackend
+    from scripts.work_on_activation import ActivationIdentity
+
+
+@final
+class _UnusedActivationTickets:
+    def consume(self, identity: ActivationIdentity, capability: str) -> None:
+        _ = identity, capability
+        message = "endpoint edge test unexpectedly requested activation"
+        raise AssertionError(message)
+
+
+_UNUSED_ACTIVATION_TICKETS = _UnusedActivationTickets()
+
+
+def _server_factory(service: DaemonBackend, control_key: bytes) -> McpServer:
+    return McpServer(
+        service,
+        control_key,
+        activation_tickets=_UNUSED_ACTIVATION_TICKETS,
+    )
+
 
 def _closed_socket(family: int, kind: int) -> socket.socket:
     result = socket.socket(family, kind)
@@ -36,7 +58,7 @@ def test_endpoint_start_failure_closes_listener_and_writes_no_locator(
     dependencies = EndpointDependencies(
         socket_factory=_closed_socket,
     )
-    endpoint = ControlEndpoint(FakeDaemon(), b"k" * 32, tmp_path, McpServer, dependencies)
+    endpoint = ControlEndpoint(FakeDaemon(), b"k" * 32, tmp_path, _server_factory, dependencies)
 
     # When / Then
     with pytest.raises(OSError, match=r".+"):
@@ -61,7 +83,7 @@ def test_nonce_interruption_rolls_back_listener_and_locator(tmp_path: Path) -> N
         FakeDaemon(),
         b"k" * 32,
         tmp_path,
-        McpServer,
+        _server_factory,
         EndpointDependencies(
             socket_factory=socket_factory,
             nonce_factory=interrupted_nonce,
@@ -95,7 +117,7 @@ def test_invalid_listener_address_rolls_back_socket_and_locator(tmp_path: Path) 
         FakeDaemon(),
         b"k" * 32,
         tmp_path,
-        McpServer,
+        _server_factory,
         EndpointDependencies(socket_factory=socket_factory),
     )
 
@@ -111,7 +133,7 @@ def test_locator_publication_failure_rolls_back_started_worker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Given
-    endpoint = ControlEndpoint(FakeDaemon(), b"k" * 32, tmp_path, McpServer)
+    endpoint = ControlEndpoint(FakeDaemon(), b"k" * 32, tmp_path, _server_factory)
 
     def fail_publish(_locator: EndpointLocator) -> None:
         reason = "publish failed"
@@ -165,7 +187,7 @@ def test_thread_start_failure_is_atomic_and_close_is_nonthrowing(
         FakeDaemon(),
         b"k" * 32,
         tmp_path,
-        McpServer,
+        _server_factory,
         EndpointDependencies(
             socket_factory=socket_factory,
             thread_factory=thread_factory,
@@ -216,7 +238,7 @@ def test_thread_that_starts_then_raises_is_joined_during_rollback(
         FakeDaemon(),
         b"k" * 32,
         tmp_path,
-        McpServer,
+        _server_factory,
         EndpointDependencies(thread_factory=thread_factory),
     )
 
@@ -229,7 +251,7 @@ def test_thread_that_starts_then_raises_is_joined_during_rollback(
 
 def test_closed_endpoint_is_one_shot(tmp_path: Path) -> None:
     # Given
-    endpoint = ControlEndpoint(FakeDaemon(), b"k" * 32, tmp_path, McpServer)
+    endpoint = ControlEndpoint(FakeDaemon(), b"k" * 32, tmp_path, _server_factory)
     _ = endpoint.start()
     endpoint.close()
 
@@ -255,7 +277,7 @@ def test_endpoint_replaces_stale_locator_and_removes_only_own_generation(
         ),
         encoding="utf-8",
     )
-    endpoint = ControlEndpoint(FakeDaemon(), b"k" * 32, tmp_path, McpServer)
+    endpoint = ControlEndpoint(FakeDaemon(), b"k" * 32, tmp_path, _server_factory)
 
     # When
     locator = endpoint.start()
@@ -276,7 +298,7 @@ def test_slow_client_is_timed_out_before_later_request_is_served(
 ) -> None:
     # Given
     daemon = FakeDaemon()
-    endpoint = ControlEndpoint(daemon, b"k" * 32, tmp_path, McpServer)
+    endpoint = ControlEndpoint(daemon, b"k" * 32, tmp_path, _server_factory)
 
     # When
     with (
@@ -302,7 +324,7 @@ def test_unexpected_worker_failure_fails_closed_and_removes_locator(
         FakeDaemon(crash_status=True),
         b"k" * 32,
         tmp_path,
-        McpServer,
+        _server_factory,
     )
     locator = endpoint.start()
 

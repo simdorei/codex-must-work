@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -12,6 +13,7 @@ if TYPE_CHECKING:
     from collections.abc import MutableMapping
 
     from scripts.notification_setup import NotificationSetupLauncher
+    from scripts.work_on_activation import ActivationAuthorizer
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -33,11 +35,17 @@ def run_server(
     streams: StdioStreams,
     control_key: bytes,
     *,
+    activation_tickets: ActivationAuthorizer,
     notification_setup: NotificationSetupLauncher | None = None,
 ) -> None:
     """Run until EOF while reserving stdout for MCP protocol messages."""
     serve_lines(
-        McpServer(service, control_key, notification_setup=notification_setup),
+        McpServer(
+            service,
+            control_key,
+            activation_tickets=activation_tickets,
+            notification_setup=notification_setup,
+        ),
         streams,
     )
 
@@ -45,8 +53,9 @@ def run_server(
 def main(argv: list[str] | None = None) -> int:
     """Create the resident daemon service and expose it over STDIO."""
     plugin_data = configure_plugin_data(argv, cwd=Path.cwd(), environ=os.environ)
-    from scripts.daemon_service import DaemonService  # noqa: PLC0415
+    from scripts.notification_daemon import NotificationDaemonService  # noqa: PLC0415
     from scripts.state import state_root  # noqa: PLC0415
+    from scripts.work_on_activation import ActivationTicketStore  # noqa: PLC0415
 
     try:
         control_key = provision_control_key(plugin_data, state_root())
@@ -54,14 +63,17 @@ def main(argv: list[str] | None = None) -> int:
         _ = sys.stderr.write(f"{error.reason_code}\n")
         return 2
 
-    service = DaemonService(notification_plugin_data=plugin_data)
+    service = NotificationDaemonService(notification_plugin_data=plugin_data)
     notification_setup = NotificationSetupCoordinator(plugin_data)
+    activation_tickets = ActivationTicketStore(plugin_data, control_key)
     try:
-        with ControlEndpoint(service, control_key, plugin_data, McpServer):
+        endpoint_factory = partial(McpServer, activation_tickets=activation_tickets)
+        with ControlEndpoint(service, control_key, plugin_data, endpoint_factory):
             run_server(
                 service,
                 StdioStreams(sys.stdin, sys.stdout, sys.stderr),
                 control_key,
+                activation_tickets=activation_tickets,
                 notification_setup=notification_setup,
             )
     except OSError:

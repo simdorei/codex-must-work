@@ -136,7 +136,7 @@ def _metadata_commit(repo: Path, disallowed_hunk: bool) -> None:
     for path in sorted(rule.paths - rule.modified):
         _write(repo, path, f"fixture:{path}\n")
     marketplace = {
-        "name": "codex-must-work-local",
+        "name": "simdorei",
         "interface": {"displayName": "Codex Must Work Local"},
         "plugins": [
             {

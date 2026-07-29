@@ -6,12 +6,17 @@ import json
 import tarfile
 from dataclasses import replace
 from pathlib import Path
-from typing import cast
+from typing import BinaryIO, cast
 
 import pytest
 
 from scripts.install_errors import InstallPluginError
 from scripts.installer_mcp_runtime import RuntimeSpec, prepare_mcp_runtime
+from scripts.runtime_tree import (
+    RuntimeEntry,
+    RuntimeTreeManifest,
+    materialize_archive,
+)
 from tests.test_installer_mcp_runtime import archive_fixture
 
 
@@ -191,6 +196,80 @@ def test_prepare_rejects_missing_or_changed_expected_bytecode(
     # When / Then
     with pytest.raises(InstallPluginError, match="portable_runtime_invalid"):
         _ = prepare_mcp_runtime(source, data, rewritten)
+
+
+def test_prepare_hashes_and_extracts_through_one_open_archive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    data = tmp_path / "data"
+    data.mkdir()
+    spec = archive_fixture(source, executable="python/python.exe")
+    hashed: list[BinaryIO] = []
+    observed: list[BinaryIO] = []
+
+    def observe_hash(archive: BinaryIO) -> str:
+        hashed.append(archive)
+        digest = hashlib.sha256()
+        while chunk := archive.read(64 * 1024):
+            digest.update(chunk)
+        _ = archive.seek(0)
+        return digest.hexdigest()
+
+    def observe_materialization(
+        archive: BinaryIO,
+        destination: Path,
+        manifest: RuntimeTreeManifest,
+    ) -> None:
+        assert not archive.closed
+        observed.append(archive)
+        materialize_archive(archive, destination, manifest)
+
+    monkeypatch.setattr(
+        "scripts.installer_mcp_runtime.materialize_archive",
+        observe_materialization,
+    )
+    monkeypatch.setattr("scripts.installer_mcp_runtime._sha256", observe_hash)
+
+    publication = prepare_mcp_runtime(source, data, spec)
+
+    assert publication.created_by_run is True
+    assert hashed == observed
+    assert len(observed) == 1
+    assert observed[0].closed
+
+
+@pytest.mark.parametrize("manifest_size", [6, 8], ids=("oversized-member", "truncated-member"))
+def test_materialization_rejects_member_size_different_from_manifest(
+    tmp_path: Path,
+    manifest_size: int,
+) -> None:
+    payload = b"runtime"
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode="w:gz") as bundle:
+        member = tarfile.TarInfo("python/python.exe")
+        member.size = len(payload)
+        member.mode = 0o755
+        bundle.addfile(member, io.BytesIO(payload))
+    _ = archive.seek(0)
+    manifest = RuntimeTreeManifest(
+        (
+            RuntimeEntry(
+                path="python.exe",
+                size=manifest_size,
+                sha256=hashlib.sha256(payload).hexdigest(),
+                type="file",
+                executable=True,
+            ),
+        ),
+        (),
+    )
+    destination = tmp_path / "stage"
+    destination.mkdir()
+
+    with pytest.raises(InstallPluginError, match="portable_runtime_invalid"):
+        materialize_archive(archive, destination, manifest)
 
 
 def test_committed_bytecode_exclusions_have_pinned_counts_and_hashes() -> None:

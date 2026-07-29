@@ -43,7 +43,6 @@ try {
         [IO.Path]::AltDirectorySeparatorChar
     )
     $Bootstrap = Join-Path $TempRoot ($BootstrapPrefix + [guid]::NewGuid().ToString('N'))
-    $Bootstrap = (New-Item -ItemType Directory -Path $Bootstrap -ErrorAction Stop).FullName
 
     $env:CODEX_HOME = $CodexHome
     $env:PLUGIN_DATA = $Bootstrap

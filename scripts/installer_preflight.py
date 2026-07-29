@@ -9,6 +9,7 @@ from scripts.cache_semver import higher, safe_name
 from scripts.cache_types import CachePublication
 from scripts.hook_trust import read_plugin_manifest
 from scripts.install_errors import InstallPluginError
+from scripts.marketplace_identity import MARKETPLACE_NAME, PLUGIN_NAME
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -16,8 +17,8 @@ if TYPE_CHECKING:
     from scripts.hook_trust import PluginManifest, TrustedHookState
     from scripts.installer_observation import PriorState
 
-_MARKETPLACE: Final = "codex-must-work-local"
-_PLUGIN: Final = "codex-must-work"
+_MARKETPLACE: Final = MARKETPLACE_NAME
+_PLUGIN: Final = PLUGIN_NAME
 _SELECTION_CONFLICT: Final = "cache_selection_conflict"
 
 

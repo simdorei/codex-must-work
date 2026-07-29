@@ -1,3 +1,6 @@
+from collections.abc import Generator
+from contextlib import contextmanager
+
 import pytest
 
 from scripts.mcp_protocol import (
@@ -7,6 +10,17 @@ from scripts.mcp_protocol import (
     error_response,
     result_response,
 )
+
+
+def test_json_rpc_error_preserves_original_failure_through_context_manager() -> None:
+    # Given: a generator context manager like temporary fixtures use.
+    @contextmanager
+    def boundary() -> Generator[None]:
+        yield
+
+    # When / Then: traceback propagation preserves the protocol failure.
+    with pytest.raises(JsonRpcError, match="Invalid params"), boundary():
+        raise JsonRpcError(-32602, "Invalid params")
 
 
 def test_decode_request_parses_valid_mcp_request() -> None:

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from scripts import cache_publication, install_plugin, installer_observation
+from scripts import cache_publication, install_plugin, installer_observation_config
 from scripts.cache_types import CacheIdentity, CachePublication
 from scripts.install_errors import InstallPluginError
 from scripts.install_plugin import install
@@ -22,8 +24,6 @@ from tests.install_plugin_support import (
 )
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     import pytest
 
     from scripts.codex_compatibility import CompatibilityResult
@@ -38,7 +38,9 @@ def test_post_enable_failure_preserves_preexisting_legacy_enabled_bytes(
     home = tmp_path / "home"
     home.mkdir()
     config = home / "config.toml"
-    original = b'[plugins."codex-must-work@simdorei"]\nenabled = true # preserve legacy\n'
+    original = (
+        b'[plugins."codex-must-work@codex-must-work-local"]\nenabled = true # preserve legacy\n'
+    )
     _ = config.write_bytes(original)
     source = source_fixture(tmp_path)
     compatibility = compatibility_fixture(home)
@@ -53,7 +55,7 @@ def test_post_enable_failure_preserves_preexisting_legacy_enabled_bytes(
 
     def remove(path: Path, expected: CacheIdentity) -> None:
         assert CacheIdentity(path.stat().st_dev, path.stat().st_ino) == expected
-        path.rmdir()
+        shutil.rmtree(path)
 
     monkeypatch.setattr(install_plugin, "validate_codex_compatibility", check)
     monkeypatch.setattr(install_plugin, "publish_cache", publisher(home))
@@ -69,7 +71,7 @@ def test_disabled_publication_requires_the_local_plugin_table_to_be_present(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     home, source, compatibility = failure_case(tmp_path, monkeypatch)
-    real_observe = installer_observation.observe_config
+    real_observe = installer_observation_config.observe_config
     require_plugins_calls = 0
 
     def check(*_args: InstallerCallValue, **kwargs: InstallerCallValue) -> CompatibilityResult:
@@ -107,7 +109,7 @@ def test_disabled_state_is_refenced_immediately_before_cache_publication(
     home = tmp_path / "home"
     home.mkdir()
     source = source_fixture(tmp_path)
-    target = home / "plugins" / "cache" / "codex-must-work-local" / "codex-must-work" / "1.2.3"
+    target = home / "plugins" / "cache" / "simdorei" / "codex-must-work" / "1.2.3"
     raw = unsafe_prior_config(target.resolve(), "zero").replace(
         b"enabled = true # target", b"enabled = false # target"
     )
@@ -148,7 +150,9 @@ def test_external_legacy_reenable_before_final_publication_prevents_success(
     home = tmp_path / "home"
     home.mkdir()
     config = home / "config.toml"
-    _ = config.write_bytes(b'[plugins."codex-must-work@simdorei"]\nenabled = false # legacy\n')
+    _ = config.write_bytes(
+        b'[plugins."codex-must-work@codex-must-work-local"]\n' + b"enabled = false # legacy\n"
+    )
     source = source_fixture(tmp_path)
     compatibility = compatibility_fixture(home)
     calls = 0
@@ -205,4 +209,64 @@ def test_failed_install_removes_runtime_created_by_same_transaction(
     assert not result.install_ok
     assert len(runtime_paths) == 1
     assert not runtime_paths[0].exists()
-    assert not (home / "plugins" / "data" / "codex-must-work-codex-must-work-local").exists()
+    assert not (home / "plugins" / "data" / "codex-must-work-simdorei").exists()
+
+
+def test_success_and_reinstall_publish_one_stable_protected_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    real_generation_validation: None,
+) -> None:
+    _ = real_generation_validation
+    home = tmp_path / "home"
+    home.mkdir()
+    source = Path(__file__).parents[1]
+    compatibility = compatibility_fixture(home)
+
+    def check(*_args: InstallerCallValue, **_kwargs: InstallerCallValue) -> CompatibilityResult:
+        return compatibility
+
+    monkeypatch.setattr(install_plugin, "validate_codex_compatibility", check)
+
+    first = install(home.resolve(), source)
+    receipt = home / ".cmw-installer-state" / "install-receipt-v1.json"
+    first_bytes = receipt.read_bytes()
+    second = install(home.resolve(), source)
+
+    assert first.install_ok
+    assert second.install_ok
+    assert receipt.read_bytes() == first_bytes
+    assert b'"hmac_sha256"' in first_bytes
+
+
+def test_receipt_publication_failure_rolls_back_enabled_config_and_new_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    real_generation_validation: None,
+) -> None:
+    _ = real_generation_validation
+    home = tmp_path / "home"
+    home.mkdir()
+    source = Path(__file__).parents[1]
+    compatibility = compatibility_fixture(home)
+
+    def check(*_args: InstallerCallValue, **_kwargs: InstallerCallValue) -> CompatibilityResult:
+        return compatibility
+
+    reason = "injected_receipt_publication_failure"
+
+    def fail_receipt(*_args: InstallerCallValue, **_kwargs: InstallerCallValue) -> None:
+        raise InstallPluginError(reason)
+
+    monkeypatch.setattr(install_plugin, "validate_codex_compatibility", check)
+    monkeypatch.setattr(install_plugin, "publish_install_receipt", fail_receipt)
+
+    result = install(home.resolve(), source)
+    cache_parent = home / "plugins" / "cache" / "simdorei" / "codex-must-work"
+
+    assert not result.install_ok
+    assert result.primary_error_code == reason
+    assert result.final_plugin_disabled is True
+    assert result.created_cache_removed is True
+    assert not (home / ".cmw-installer-state" / "install-receipt-v1.json").exists()
+    assert not cache_parent.exists() or not tuple(cache_parent.iterdir())

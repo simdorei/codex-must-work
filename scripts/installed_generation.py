@@ -14,6 +14,7 @@ from scripts.install_errors import InstallPluginError
 from scripts.installer_cache_validation import retained_cache_matches
 from scripts.installer_lock import installer_lock
 from scripts.installer_observation import PriorState, classify_prior
+from scripts.marketplace_identity import MARKETPLACE_NAME, PLUGIN_NAME
 from scripts.state_io import open_direct_file
 
 if TYPE_CHECKING:
@@ -22,9 +23,9 @@ if TYPE_CHECKING:
     from scripts.cache_types import CacheIdentity, CachePublication
     from scripts.hook_trust import PluginManifest
 
-_MARKETPLACE: Final = "codex-must-work-local"
-_PUBLIC_MARKETPLACE: Final = "simdorei"
-_PLUGIN: Final = "codex-must-work"
+_MARKETPLACE: Final = MARKETPLACE_NAME
+_PUBLIC_MARKETPLACE: Final = MARKETPLACE_NAME
+_PLUGIN: Final = PLUGIN_NAME
 
 
 @dataclass(frozen=True, slots=True)

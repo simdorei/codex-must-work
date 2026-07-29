@@ -94,12 +94,7 @@ def _validate_string(value: str, path: tuple[str | int, ...], allow_auth_overlon
     except UnicodeEncodeError as error:
         raise ValueError from error
     if string_bytes > MAX_STRING_BYTES and not (
-        allow_auth_overlong
-        and path
-        in {
-            ("params", "arguments", "session_id"),
-            ("params", "arguments", "control_capability"),
-        }
+        allow_auth_overlong and path == ("params", "arguments", "session_id")
     ):
         raise ValueError
 
@@ -110,10 +105,12 @@ def has_control_tool_shape(root: JsonValue) -> bool:
         return False
     params = root.get("params")
     if type(params) is not dict or params.get("name") not in {
-        "cmw.start",
+        "cmw.work_on",
         "cmw.stop",
         "cmw.status",
         "cmw.complete",
+        "cmw.settings",
+        "cmw.notifications.setup",
     }:
         return False
     return type(params.get("arguments")) is dict

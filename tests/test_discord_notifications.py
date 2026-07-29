@@ -20,11 +20,14 @@ from scripts.discord_webhook import (
 from scripts.notification_config import NotificationConfigStore
 from scripts.notifications import (
     LifecycleNotification,
+    NotificationDeliveryError,
     NotificationKind,
     NotificationSubject,
     NotificationSubjectKind,
     NullNotificationSink,
 )
+from scripts.private_root import ensure_private_root
+from scripts.state import StateDocument, save_state
 from scripts.thread_title import ThreadTitleResolver
 
 if TYPE_CHECKING:
@@ -106,6 +109,25 @@ def test_webhook_client_posts_waiting_payload_without_mentions() -> None:
     }
 
 
+def test_webhook_client_rejects_content_over_discord_limit_before_connecting() -> None:
+    connections = 0
+
+    def factory(_host: str, _port: int, _timeout: float) -> _FakeConnection:
+        nonlocal connections
+        connections += 1
+        return _FakeConnection()
+
+    client = DiscordWebhookClient(
+        "https://discord.com/api/webhooks/123456789/token-value",
+        connection_factory=factory,
+    )
+
+    with pytest.raises(DiscordWebhookError, match="discord_content_too_large"):
+        _ = client.send("x" * 2_001)
+
+    assert connections == 0
+
+
 @pytest.mark.parametrize(
     "webhook_url",
     [
@@ -159,35 +181,6 @@ def test_title_resolver_reads_codex_database_without_writing(tmp_path: Path) -> 
 
     assert resolver.resolve("thread-1") == "CMW webhook QA"
     assert resolver.resolve("missing-thread") is None
-
-
-@pytest.mark.parametrize(
-    ("kind", "expected"),
-    [
-        (NotificationKind.BOTTLENECK_SUSPECTED, "병목 의심"),
-        (NotificationKind.PROGRESS_RECOVERED, "진행 회복"),
-        (NotificationKind.COMPLETED, "정상 완료"),
-    ],
-)
-def test_sink_includes_thread_title_for_every_lifecycle_message(
-    kind: NotificationKind,
-    expected: str,
-) -> None:
-    sent: list[str] = []
-
-    class _Client:
-        def send(self, content: str) -> str | None:
-            sent.append(content)
-            return "message-id"
-
-    sink = DiscordNotificationSink(_Client(), lambda _session_id: "CMW webhook QA")
-
-    sink.notify(_event(kind))
-
-    assert len(sent) == 1
-    assert expected in sent[0]
-    assert "CMW webhook QA" in sent[0]
-    assert "메인 에이전트" in sent[0]
 
 
 def test_sink_names_specific_subagent_from_local_codex_metadata() -> None:
@@ -245,3 +238,21 @@ def test_configured_sink_observes_setup_without_daemon_restart(
 
     assert len(sent) == 1
     assert "메인 에이전트" in sent[0]
+
+
+def test_configured_sink_reports_malformed_private_state_as_delivery_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data_root = tmp_path / "plugin-data"
+    monkeypatch.delenv(CMW_DISCORD_WEBHOOK_ENV, raising=False)
+    ensure_private_root(data_root)
+    save_state(
+        data_root,
+        data_root / "notifications.json",
+        StateDocument(values={"discord_webhook_url": "not-a-webhook"}),
+    )
+    sink = notification_sink_from_configuration(data_root)
+
+    with pytest.raises(NotificationDeliveryError, match="discord_config_invalid"):
+        sink.notify(_event(NotificationKind.BOTTLENECK_SUSPECTED))

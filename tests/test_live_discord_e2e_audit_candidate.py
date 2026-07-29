@@ -51,8 +51,8 @@ def _strict_preflight_args(
         tmp_path / "data",
         "dontAsk",
         PACKAGE_DIGEST,
-        "x" * 43,
     )
+
     def located(_path: Path) -> PreflightLocator:
         return locator
 

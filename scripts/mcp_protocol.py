@@ -18,7 +18,7 @@ from typing import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from scripts.daemon_models import SessionRequest, StartRequest, ToolResult
+    from scripts.monitor_models import SessionRequest, StartRequest, ToolResult
     from scripts.state_io import JsonValue
 
 from scripts.mcp_limits import (
@@ -132,9 +132,9 @@ class JsonRpcRequest:
     is_notification: bool
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)  # noqa: PGH004, RUF100  # noqa: MUTABLE_OK
 class JsonRpcError(ValueError):
-    """A JSON-RPC protocol failure suitable for a response error object."""
+    """A protocol failure mutable only so Python can attach exception tracebacks."""
 
     code: int
     message: str

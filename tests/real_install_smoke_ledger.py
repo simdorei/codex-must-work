@@ -14,10 +14,12 @@ type TomlValue = str | int | float | bool | list[TomlValue] | dict[str, TomlValu
 type TomlTable = dict[str, TomlValue]
 
 CMW_EVENTS: Final = ("session_start",)
-_PLUGIN: Final = "codex-must-work@codex-must-work-local"
-_MARKETPLACE: Final = "codex-must-work-local"
+_PLUGIN: Final = "codex-must-work@simdorei"
+_MARKETPLACE: Final = "simdorei"
 _PREFIX: Final = f"{_PLUGIN}:hooks/hooks.json:"
-_LEGACY: Final = "codex-must-work@simdorei"
+_LEGACY_MARKETPLACE: Final = "codex-must-work-local"
+_LEGACY: Final = "codex-must-work@codex-must-work-local"
+_LEGACY_PREFIX: Final = f"{_LEGACY}:hooks/hooks.json:"
 _HEADERS: Final = re.compile(rb"(?m)^\[([^\]\r\n]+)\][ \t]*(?:#.*)?\r?$")
 
 
@@ -130,7 +132,7 @@ def _state(path: Path, name: str) -> FileState:
 def _semantics(
     before: TomlTable,
     after: TomlTable,
-    selected_cache: Path,
+    _selected_cache: Path,
     trusted: tuple[TrustEntry, ...],
 ) -> bool:
     expected = {
@@ -152,7 +154,12 @@ def _semantics(
         and isinstance(features, dict)
         and features.get("plugins") is True
         and isinstance(markets, dict)
-        and markets.get(_MARKETPLACE) == {"source_type": "local", "source": str(selected_cache)}
+        and markets.get(_MARKETPLACE)
+        == {
+            "source_type": "git",
+            "source": "https://github.com/simdorei/codex-must-work.git",
+            "ref": "main",
+        }
         and isinstance(plugins, dict)
         and plugins.get(_PLUGIN) == {"enabled": True}
         and owned == expected
@@ -160,34 +167,31 @@ def _semantics(
     if not exact:
         return False
     old, new = copy.deepcopy(before), copy.deepcopy(after)
-    _remove(old, had_legacy=False)
-    _remove(new, had_legacy=_has_legacy(before))
+    _remove(old)
+    _remove(new)
     _prune(old)
     _prune(new)
     return old == new
 
 
-def _has_legacy(tree: TomlTable) -> bool:
-    plugins = tree.get("plugins")
-    return isinstance(plugins, dict) and isinstance(plugins.get(_LEGACY), dict)
-
-
-def _remove(tree: TomlTable, *, had_legacy: bool) -> None:
-    for parent, key in (("features", "plugins"), ("marketplaces", _MARKETPLACE)):
+def _remove(tree: TomlTable) -> None:
+    for parent, key in (
+        ("features", "plugins"),
+        ("marketplaces", _MARKETPLACE),
+        ("marketplaces", _LEGACY_MARKETPLACE),
+    ):
         table = tree.get(parent)
         if isinstance(table, dict):
             _ = table.pop(key, None)
     plugins = tree.get("plugins")
     if isinstance(plugins, dict):
         _ = plugins.pop(_PLUGIN, None)
-        legacy = plugins.get(_LEGACY)
-        if had_legacy and isinstance(legacy, dict):
-            _ = legacy.pop("enabled", None)
+        _ = plugins.pop(_LEGACY, None)
     hooks = tree.get("hooks")
     state = hooks.get("state") if isinstance(hooks, dict) else None
     if isinstance(state, dict):
         for key in tuple(state):
-            if key.startswith(_PREFIX):
+            if key.startswith((_PREFIX, _LEGACY_PREFIX)):
                 _ = state.pop(key)
 
 
@@ -199,16 +203,12 @@ def _prune(tree: TomlTable) -> None:
                 _ = tree.pop(key)
 
 
-def _protected(data: bytes, baseline: TomlTable) -> bytes:
+def _protected(data: bytes, _baseline: TomlTable) -> bytes:
     headers = list(_HEADERS.finditer(data))
     spans = _owned_table_spans(data, headers)
     feature = _assignment(data, headers, "features", b"plugins")
     if feature is not None:
         spans.append(feature)
-    if _has_legacy(baseline):
-        legacy = _assignment(data, headers, f'plugins."{_LEGACY}"', b"enabled")
-        if legacy is not None:
-            spans.append(legacy)
     merged: list[tuple[int, int]] = []
     for start, end in sorted(spans):
         if merged and start <= merged[-1][1]:
@@ -225,10 +225,19 @@ def _protected(data: bytes, baseline: TomlTable) -> bytes:
 
 def _owned_table_spans(data: bytes, headers: list[re.Match[bytes]]) -> list[tuple[int, int]]:
     spans: list[tuple[int, int]] = []
-    targets = {f"marketplaces.{_MARKETPLACE}", f'plugins."{_PLUGIN}"'}
+    targets = {
+        f"marketplaces.{_MARKETPLACE}",
+        f"marketplaces.{_LEGACY_MARKETPLACE}",
+        f'plugins."{_PLUGIN}"',
+        f'plugins."{_LEGACY}"',
+    }
     for index, header in enumerate(headers):
         name = header.group(1).decode("utf-8")
-        if name in targets or name.startswith(f'hooks.state."{_PREFIX}'):
+        hook_prefixes = (
+            f'hooks.state."{_PREFIX}',
+            f'hooks.state."{_LEGACY_PREFIX}',
+        )
+        if name in targets or name.startswith(hook_prefixes):
             start = header.start()
             if data[max(0, start - 4) : start] == b"\r\n\r\n":
                 start -= 2

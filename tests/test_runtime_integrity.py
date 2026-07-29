@@ -201,7 +201,7 @@ def test_mcp_launch_disables_bytecode_and_keeps_relative_layout() -> None:
 
     # When / Then
     assert server["command"] == "runtime/launch-python.exe"
-    assert server["args"] == ["scripts/mcp_server.py"]
+    assert server["args"] == ["scripts/mcp_bootstrap.py"]
     assert server["env"]["PYTHONDONTWRITEBYTECODE"] == "1"
     assert server["cwd"] == "."
 

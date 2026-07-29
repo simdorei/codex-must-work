@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum, unique
-from typing import Protocol, final, override
+from typing import Protocol, assert_never, final, override
 
 
 @unique
@@ -12,6 +12,7 @@ class NotificationKind(StrEnum):
     """Lifecycle transitions that may leave the local machine."""
 
     BOTTLENECK_SUSPECTED = "bottleneck_suspected"
+    BOTTLENECK_CRITICAL = "bottleneck_critical"
     PROGRESS_RECOVERED = "progress_recovered"
     COMPLETED = "completed"
 
@@ -34,13 +35,17 @@ class NotificationSubject:
 
     def __post_init__(self) -> None:
         """Reject subject shapes that could blur main and subagent alerts."""
-        match self.kind:  # noqa: MATCH_OK - subject kind union is exhaustive.
+        match self.kind:
             case NotificationSubjectKind.TASK | NotificationSubjectKind.MAIN_AGENT:
-                valid = self.target_id is None
+                if self.target_id is not None:
+                    raise NotificationSubjectError(self.kind)
+                return
             case NotificationSubjectKind.SUBAGENT:
-                valid = self.target_id is not None and bool(self.target_id)
-        if not valid:
-            raise NotificationSubjectError(self.kind)
+                if self.target_id is None or not self.target_id:
+                    raise NotificationSubjectError(self.kind)
+                return
+            case _:
+                assert_never(self.kind)
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +68,7 @@ class LifecycleNotification:
     kind: NotificationKind
     subject: NotificationSubject
     elapsed_ms: int | None = None
+    threshold_ms: int | None = None
 
 
 class NotificationDeliveryError(RuntimeError):

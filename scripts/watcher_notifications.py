@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, final
+from typing import TYPE_CHECKING, assert_never, final
 
-from scripts.diagnostics import DiagnosticCode
+from scripts.monitor_diagnostics import DiagnosticCode
 from scripts.notifications import (
     LifecycleNotification,
     NotificationDeliveryError,
@@ -27,8 +27,8 @@ if TYPE_CHECKING:
     from datetime import datetime
     from pathlib import Path
 
-    from scripts.silence import SilenceState
-    from scripts.watcher_models import MonitorTarget, RuntimeTarget
+    from scripts.monitor_target import MonitorTarget, RuntimeTarget
+    from scripts.stall_detector import SilenceState
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +105,7 @@ class WatcherNotificationRecorder:
                     kind,
                     _notification_subject(diagnostic),
                     diagnostic.elapsed_ms,
+                    _notification_threshold_ms(target, kind),
                 ),
             )
         )
@@ -132,6 +133,7 @@ class WatcherNotificationRecorder:
 def _notification_kind(code: DiagnosticCode) -> NotificationKind | None:
     return {
         DiagnosticCode.OBSERVABLE_PROGRESS_SILENCE: NotificationKind.BOTTLENECK_SUSPECTED,
+        DiagnosticCode.BOTTLENECK_CRITICAL: NotificationKind.BOTTLENECK_CRITICAL,
         DiagnosticCode.PROGRESS_RECOVERED: NotificationKind.PROGRESS_RECOVERED,
         DiagnosticCode.WATCHER_COMPLETED: NotificationKind.COMPLETED,
     }.get(code)
@@ -147,3 +149,19 @@ def _notification_subject(diagnostic: TargetDiagnostic) -> NotificationSubject:
         NotificationSubjectKind.SUBAGENT,
         target_id=monitor.target_id,
     )
+
+
+def _notification_threshold_ms(
+    target: RuntimeTarget,
+    kind: NotificationKind,
+) -> int | None:
+    """Report the configured transition boundary, not scheduler tick drift."""
+    match kind:
+        case NotificationKind.BOTTLENECK_SUSPECTED:
+            return max(0, int(target.thresholds.warning * 1000))
+        case NotificationKind.BOTTLENECK_CRITICAL:
+            return max(0, int(target.thresholds.critical * 1000))
+        case NotificationKind.PROGRESS_RECOVERED | NotificationKind.COMPLETED:
+            return None
+        case _:
+            assert_never(kind)

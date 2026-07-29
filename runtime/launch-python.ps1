@@ -223,7 +223,7 @@ if ($ForwardStdin) {
     }
     $StartInfo = [Diagnostics.ProcessStartInfo]::new()
     $StartInfo.FileName = $Python
-    $StartInfo.Arguments = '-B "' + $PythonArgs[0] + '"'
+    $StartInfo.Arguments = '-I -B -X utf8 "' + $PythonArgs[0] + '"'
     $StartInfo.UseShellExecute = $false
     $StartInfo.CreateNoWindow = $true
     $StartInfo.RedirectStandardInput = $true
@@ -258,5 +258,5 @@ if ($ForwardStdin) {
     exit $ChildExitCode
 }
 
-& $Python -B @PythonArgs
+& $Python -I -B -X utf8 @PythonArgs
 exit $LASTEXITCODE

@@ -7,8 +7,8 @@ from unittest.mock import patch
 
 import pytest
 
-from scripts.diagnostics import DiagnosticCode, MonitorState
 from scripts.hook_event import process_hook
+from scripts.monitor_diagnostics import DiagnosticCode, MonitorState
 from scripts.state import JsonValue, StateDocument, load_state, runtime_path, save_state
 from scripts.state_io import atomic_json_write as actual_atomic_json_write
 from scripts.watcher_engine import WatcherEngine

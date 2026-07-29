@@ -95,6 +95,14 @@ class CalibrationStateError(StateError):
         return f"calibration state rejected at {self.path}: {self.reason_code}"
 
 
+def load_calibration_snapshot(root: Path) -> CalibrationSnapshot | None:
+    """Read the stored recommendation state without scanning history."""
+    path = _state_path(root)
+    if not path.is_file():
+        return None
+    return _load_snapshot(root, path)
+
+
 def load_or_calibrate(
     environment: CalibrationEnvironment,
     scanner: HistoryScanner,

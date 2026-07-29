@@ -75,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
             {
                 "passed": True,
                 "configured": True,
-                "discord_messages_acknowledged": 3,
+                "discord_messages_acknowledged": 4,
                 "secret_disclosed": False,
             },
             separators=(",", ":"),
@@ -199,6 +199,15 @@ def _send_target_samples(webhook: DiscordWebhookUrl) -> None:
     sink.notify(
         LifecycleNotification(
             "b" * 64,
+            "live-qa",
+            NotificationKind.BOTTLENECK_CRITICAL,
+            NotificationSubject(NotificationSubjectKind.MAIN_AGENT),
+            600_000,
+        )
+    )
+    sink.notify(
+        LifecycleNotification(
+            "c" * 64,
             "live-qa",
             NotificationKind.PROGRESS_RECOVERED,
             NotificationSubject(NotificationSubjectKind.SUBAGENT, "qa-subagent"),

@@ -67,7 +67,7 @@ def test_non_goal_interrupt_rechecks_progress_consumed_after_claim(
     assert "turn/interrupt" not in client.calls
 
 
-def test_irrelevant_rollout_event_does_not_delete_queued_restart(tmp_path: Path) -> None:
+def test_irrelevant_rollout_event_never_creates_a_restart_request(tmp_path: Path) -> None:
     root, path, _engine, _client = _managed_turn(tmp_path)
     watcher = WatcherEngine(root)
     wall_time = datetime(2026, 7, 18, tzinfo=UTC)
@@ -75,7 +75,7 @@ def test_irrelevant_rollout_event_does_not_delete_queued_restart(tmp_path: Path)
     _ = watcher.tick(91.0, wall_time)
     _ = watcher.tick(301.0, wall_time)
     before = load_state(root, path).values["restart_request"]
-    assert before is not None
+    assert before is None
     rollout = tmp_path / "sessions" / "rollout.jsonl"
     record = {
         "timestamp": "2026-07-18T00:00:02Z",
@@ -88,7 +88,7 @@ def test_irrelevant_rollout_event_does_not_delete_queued_restart(tmp_path: Path)
     _ = watcher.tick(302.0, wall_time)
     after = load_state(root, path).values["restart_request"]
 
-    assert after == before
+    assert after is None
 
 
 def test_manager_guard_ignores_unread_irrelevant_event(tmp_path: Path) -> None:

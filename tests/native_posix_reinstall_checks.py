@@ -26,9 +26,7 @@ def _check(name: str) -> CheckName:
 
 def serialized_reinstalls(layout: NativeLayout, home: Path, checks: Checks) -> None:
     """Prove lock serialization and byte-for-byte no-write reinstalls."""
-    control_key = (
-        home / "plugins" / "data" / "codex-must-work-codex-must-work-local" / "control.key"
-    )
+    control_key = home / "plugins" / "data" / "codex-must-work-simdorei" / "control.key"
     metadata_only = frozenset((control_key,))
     before = tree_snapshot(home, metadata_only=metadata_only)
     marker = layout.root / "installer-a-holds-lock"

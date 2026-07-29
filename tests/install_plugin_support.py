@@ -70,6 +70,17 @@ def source_fixture(tmp_path: Path, version: str = "1.2.3", directory: str = "sou
         json.dumps({"name": "codex-must-work", "version": version}), encoding="utf-8"
     )
     _ = (source / "hooks" / "hooks.json").write_text("{}", encoding="utf-8")
+    (source / "runtime").mkdir()
+    _ = (source / "runtime" / "package-files.json").write_text(
+        json.dumps(
+            [
+                ".codex-plugin/plugin.json",
+                "hooks/hooks.json",
+                "runtime/package-files.json",
+            ]
+        ),
+        encoding="utf-8",
+    )
     return source.resolve()
 
 
@@ -79,8 +90,14 @@ def compatibility_fixture(home: Path) -> CompatibilityResult:
 
 
 def publication_fixture(home: Path, version: str = "1.2.3") -> CachePublication:
-    path = home / "plugins" / "cache" / "codex-must-work-local" / "codex-must-work" / version
-    path.mkdir(parents=True, exist_ok=True)
+    path = home / "plugins" / "cache" / "simdorei" / "codex-must-work" / version
+    (path / ".codex-plugin").mkdir(parents=True, exist_ok=True)
+    (path / "hooks").mkdir(exist_ok=True)
+    _ = (path / ".codex-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "codex-must-work", "version": version}),
+        encoding="utf-8",
+    )
+    _ = (path / "hooks" / "hooks.json").write_text("{}", encoding="utf-8")
     identity = path.stat()
     return CachePublication(
         cache_path=path,
@@ -98,8 +115,8 @@ def publisher(home: Path) -> Callable[[Path, Path, str], CachePublication]:
 
 
 def trusted_states(_source_fixture: Path) -> tuple[TrustedHookState, ...]:
-    labels = ("session_start",)
-    prefix = "codex-must-work@codex-must-work-local:hooks/hooks.json"
+    labels = ("user_prompt_submit",)
+    prefix = "codex-must-work@simdorei:hooks/hooks.json"
     return tuple(
         TrustedHookState(f"{prefix}:{label}:0:0", f"sha256:{index:064x}")
         for index, label in enumerate(labels)
@@ -110,11 +127,12 @@ def unsafe_prior_config(source: Path, variant: str) -> bytes:
     lines = [
         'marker = "preserve"',
         "",
-        "[marketplaces.codex-must-work-local]",
-        'source_type = "local"',
-        f"source = {json.dumps(str(source))}",
+        "[marketplaces.simdorei]",
+        'source_type = "git"',
+        'source = "https://github.com/simdorei/codex-must-work.git"',
+        'ref = "main"',
         "",
-        '[plugins."codex-must-work@codex-must-work-local"]',
+        '[plugins."codex-must-work@simdorei"]',
         "enabled = true # target",
     ]
     states = trusted_states(source)

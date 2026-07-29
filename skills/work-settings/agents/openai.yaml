@@ -1,0 +1,5 @@
+interface:
+  display_name: "Bottleneck settings"
+  short_description: "Choose CMW 병목 의심 and 심각 정체 thresholds"
+  default_prompt: "Use $work-settings to show or change CMW bottleneck thresholds."
+  allow_implicit_invocation: true

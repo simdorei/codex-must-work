@@ -3,4 +3,4 @@ interface:
   short_description: "Keep one Codex task running to completion"
   default_prompt: "Use $work-on to keep this Codex task running until its success criteria are verified."
 policy:
-  allow_implicit_invocation: true
+  allow_implicit_invocation: false

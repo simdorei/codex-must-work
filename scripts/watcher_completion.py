@@ -6,19 +6,19 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from scripts.diagnostics import DiagnosticCode, MonitorState
-from scripts.silence import SilenceState, WaitState, initial_state, set_wait_state
+from scripts.monitor_diagnostics import DiagnosticCode, MonitorState
+from scripts.monitor_state import claim_completion, mark_target_terminal
+from scripts.stall_detector import SilenceState, WaitState, initial_state, set_wait_state
 from scripts.watcher_diagnostics import (
     TargetDiagnostic,
     completion_event_id,
 )
-from scripts.watcher_state import claim_completion, mark_target_terminal
 
 if TYPE_CHECKING:
     from datetime import datetime
 
+    from scripts.monitor_target import RuntimeTarget
     from scripts.state_io import JsonValue
-    from scripts.watcher_models import RuntimeTarget
 
 type DetectorKey = tuple[str, str | None, int]
 type DiagnosticWriter = Callable[[RuntimeTarget, TargetDiagnostic], None]

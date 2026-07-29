@@ -166,7 +166,10 @@ def test_config_ledger_rejects_wrong_owned_transition(tmp_path: Path, mode: str)
     elif mode == "wrong_record":
         trust = (*trust[:-1], ledger.TrustEntry(trust[-1].key, "sha256:" + "f" * 64))
     else:
-        cache = (tmp_path / "swapped-cache").resolve()
+        after = after.replace(
+            b"https://github.com/simdorei/codex-must-work.git",
+            b"https://github.com/example/codex-must-work.git",
+        )
 
     # When / Then: exact lifecycle-hook/source/hash semantics are mandatory.
     with pytest.raises(ledger.SmokeError, match="allowed_config_delta_mismatch"):

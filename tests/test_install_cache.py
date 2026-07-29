@@ -15,7 +15,7 @@ from scripts.state_io import open_direct_file
 
 ROOT = Path(__file__).resolve().parents[1]
 ORACLE = ROOT / "tests" / "fixtures" / "package-files-base-0352.txt"
-ORACLE_SHA = "5eee478bec8407930ef8f38fa4e411fa9ff202771d00893485f1220bbb37ddb8"
+ORACLE_SHA = "307023309908112f11f29209f4980f1696557f26aac0e6aa297d053a30eef347"
 GOLDEN = "d073c2db6f4ecafccba71b30ebacda30e99c61bb449e06b013f9c40dfdc6ab68"
 MANIFEST = "runtime/package-files.json"
 
@@ -48,7 +48,7 @@ def _source(root: Path) -> tuple[str, ...]:
 
 
 def _cache(home: Path, version: str = "1.0.0") -> Path:
-    return home / "plugins" / "cache" / "codex-must-work-local" / "codex-must-work" / version
+    return home / "plugins" / "cache" / "simdorei" / "codex-must-work" / version
 
 
 def _digest(root: Path, paths: tuple[str, ...]) -> str:
@@ -86,28 +86,33 @@ def cache_case(tmp_path: Path) -> CacheCase:
     return source.resolve(), home.resolve(), paths
 
 
+def test_publish_claims_existing_git_marketplace_plugin_root(cache_case: CacheCase) -> None:
+    plugin_root = _target(cache_case, "0.9.0").parent
+    (plugin_root / "0.9.0").mkdir(parents=True)
+
+    result = _publish(cache_case)
+
+    assert result.created_by_run
+    assert result.cache_path == _target(cache_case)
+    assert (plugin_root / "0.9.0").is_dir()
+
+
 def test_oracle_and_manifest_are_exact() -> None:
     oracle_data = ORACLE.read_bytes()
     oracle = oracle_data.decode().splitlines()
     manifest = sorted([*oracle, MANIFEST], key=str.encode)
-    assert (len(oracle), hashlib.sha256(oracle_data).hexdigest()) == (145, ORACLE_SHA)
+    assert (len(oracle), hashlib.sha256(oracle_data).hexdigest()) == (144, ORACLE_SHA)
     assert oracle_data.endswith(b"\n")
     assert b"\r" not in oracle_data
     assert oracle == sorted(oracle, key=str.encode)
-    assert len(manifest) == len(set(manifest)) == 146
+    assert len(manifest) == len(set(manifest)) == 145
     assert all((ROOT / path).is_file() for path in manifest)
-    installer_only = {
-        "scripts/codex_config.py",
-        "scripts/config_metadata.py",
-        "scripts/config_publication.py",
-        "scripts/hook_trust.py",
+    installer_entrypoints = {
         "scripts/install_cache.py",
-        "scripts/install_errors.py",
-        "scripts/installer_lock.py",
-        "scripts/windows_file.py",
-        *(f"scripts/{path.name}" for path in (ROOT / "scripts").glob("cache_*.py")),
+        "scripts/install_plugin.py",
+        "scripts/setup_cli.py",
     }
-    assert installer_only.isdisjoint(manifest)
+    assert installer_entrypoints.isdisjoint(manifest)
     assert not any(path.startswith("tests/") for path in manifest)
     assert (ROOT / MANIFEST).read_bytes() == json.dumps(manifest, indent=2).encode() + b"\n"
 

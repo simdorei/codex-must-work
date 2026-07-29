@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import shutil
 from typing import TYPE_CHECKING
 
 import pytest
 
-from scripts import cache_publication, install_plugin, installer_observation
+from scripts import (
+    cache_publication,
+    install_plugin,
+    installer_observation_config,
+    installer_prior_observation,
+)
 from scripts.cache_types import CacheIdentity, CachePublication
 from scripts.config_publication import write_config_bytes as real_write_config_bytes
 from scripts.install_errors import InstallPluginError
@@ -95,7 +101,12 @@ def test_external_writer_conflict_preserves_writer_bytes_then_best_effort_disabl
 
     monkeypatch.setattr(install_plugin, "validate_codex_compatibility", check)
     monkeypatch.setattr(install_plugin, "trusted_states", trusted_states)
-    monkeypatch.setattr(installer_observation, "write_config_bytes", race_write, raising=False)
+    monkeypatch.setattr(
+        installer_observation_config,
+        "write_config_bytes",
+        race_write,
+        raising=False,
+    )
 
     result = install(home.resolve(), source)
     final = config.read_bytes()
@@ -113,7 +124,9 @@ def test_failed_upgrade_restores_only_a_fully_validated_prior(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     prior_valid: bool,
+    synthetic_install_receipt: None,
 ) -> None:
+    _ = synthetic_install_receipt
     home = tmp_path / "home"
     home.mkdir()
     old_source = source_fixture(tmp_path, "1.0.0", "source-old")
@@ -136,20 +149,20 @@ def test_failed_upgrade_restores_only_a_fully_validated_prior(
         )
 
     def trusted(path: Path, marketplace: str) -> tuple[TrustedHookState, ...]:
-        assert marketplace == "codex-must-work-local"
+        assert marketplace == "simdorei"
         return trusted_states(path)
 
     def remove(path: Path, expected: CacheIdentity) -> None:
         metadata = path.stat()
         assert CacheIdentity(metadata.st_dev, metadata.st_ino) == expected
-        path.rmdir()
+        shutil.rmtree(path)
 
     monkeypatch.setattr(install_plugin, "validate_codex_compatibility", check_ok)
     monkeypatch.setattr(install_plugin, "publish_cache", publisher(home))
     monkeypatch.setattr(install_plugin, "trusted_states", trusted_states)
-    monkeypatch.setattr(installer_observation, "snapshot_retained_cache", snapshot)
-    monkeypatch.setattr(installer_observation, "retained_cache_matches", retained)
-    monkeypatch.setattr(installer_observation, "trusted_hook_states_for_plugin", trusted)
+    monkeypatch.setattr(installer_prior_observation, "snapshot_retained_cache", snapshot)
+    monkeypatch.setattr(installer_prior_observation, "retained_cache_matches", retained)
+    monkeypatch.setattr(installer_prior_observation, "trusted_hook_states_for_plugin", trusted)
     monkeypatch.setattr(cache_publication, "remove_tree", remove)
     first = install(home.resolve(), old_source)
     assert first.install_ok
@@ -169,7 +182,7 @@ def test_failed_upgrade_restores_only_a_fully_validated_prior(
     monkeypatch.setattr(install_plugin, "validate_codex_compatibility", fail_upgrade)
     second = install(home.resolve(), new_source)
     with installer_lock(home.resolve()) as lease:
-        final = installer_observation.observe_config(home.resolve(), lease)
+        final = installer_observation_config.observe_config(home.resolve(), lease)
 
     assert not second.install_ok
     assert second.created_cache_removed is True
@@ -181,5 +194,5 @@ def test_failed_upgrade_restores_only_a_fully_validated_prior(
         assert second.final_cache_matches_enabled_trust is True
     else:
         assert final.source_root is not None
-        assert final.source_root.name == "2.0.0"
+        assert final.source_root.name == "1.0.0"
         assert second.final_cache_matches_enabled_trust is False

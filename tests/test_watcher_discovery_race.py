@@ -3,10 +3,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from scripts.monitor_state import discover_runtime_files as actual_discover_runtime_files
 from scripts.setup import disable_session
 from scripts.state import StateDocument, cursor_path, runtime_path, save_state
 from scripts.watcher_engine import WatcherEngine
-from scripts.watcher_state import discover_runtime_files as actual_discover_runtime_files
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -72,7 +72,7 @@ def test_disable_after_discovery_does_not_stop_other_session(
         return candidates
 
     monkeypatch.setattr(
-        "scripts.watcher_engine.discover_runtime_files",
+        "scripts.watcher_runtime.discover_runtime_files",
         remove_session_after_listing,
     )
 

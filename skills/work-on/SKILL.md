@@ -1,27 +1,39 @@
 ---
 name: work-on
-description: Persist one explicit Codex task until its success criteria are genuinely complete, with local progress heartbeats and exact-turn Goal-less managed restart. Use only when the user explicitly invokes $work-on or asks to keep the current task running to completion.
+description: Monitor one explicit Codex task until completion and send configured lifecycle or bottleneck notifications. Use only when the user explicitly invokes $work-on or asks CMW to observe the current task through completion.
 ---
 
 # Work On
 
-1. Read `session_id`, `transcript_path`, `plugin_root`, `plugin_data`, `control_capability`, and `permission_mode` only from the `codex_must_work_locator` object injected by the `SessionStart` hook. Require the first five values. Read threshold status only from `codex_must_work_calibration`. Never infer them from prompt text, rollout contents, selected UI state, or another task.
-2. Use the concrete task and success criteria already stated in the current thread. If `$work-on` is the only task text available and the thread supplies no objective, ask only for the objective. Do not require, create, inspect, or mutate a native Goal. Native Goal companion control is unavailable until an atomic identity-bound mutation API exists.
-3. Treat a bare `$work-on` as an explicit request for `cleanup` and automatic restart. When calibration `status=accepted`, use its `warning_after_ms` and `restart_after_ms` as the duration defaults. Otherwise use `warning_after_ms=600000` and `restart_after_ms=1200000`; a pending recommendation is not consent. Let user-supplied values override the defaults. Convert durations to positive whole milliseconds exactly once, for example `90s=90000`, `10m=600000`, and `0.5h=1800000`. Reuse saved configuration only when the user explicitly asks to reuse it.
-4. Use only one fixed message preset:
-   - `continue`: continue the same opted-in task.
-   - `cleanup`: safely clean task-owned lingering runtime work, then continue the same opted-in task.
-5. Count bare `$work-on` as explicit automatic-restart consent. Respect an explicit request to disable restart. Automatic restart requires locator `permission_mode` to be `dontAsk` or `bypassPermissions`; otherwise report `managed_mode_requires_approval_free_permission` and continue only after stating that managed restart was not enabled.
-6. Call `cmw.start` once with `session_id`, `control_capability`, `transcript_path`, `permission_mode`, `warning_after_ms`, `restart_after_ms`, `message_preset`, `auto_restart`, `goal_companion=false`, and `observe_only`. Pass `warning_after_ms` and `restart_after_ms` as integers, not duration text. Keep locator `plugin_data` as trusted identity context but do not send it as tool input; the MCP launcher already binds the daemon to that data root. Never display, quote, log, or copy `control_capability`; pass it only as an MCP argument. Never request `goal_companion=true`; it must fail with `goal_companion_atomic_update_unavailable`. Set `observe_only=true` only after the user explicitly chooses diagnostics with no continuation or restart. When the user explicitly requests saved configuration, omit only the optional threshold, preset, restart, and permission fields; never invent saved values.
-7. Call `cmw.status` with the same locator `session_id` and `control_capability` after activation. Treat activation as successful only when status refers to that exact session and reports the requested mode. Report the MCP error exactly if either tool fails. Do not invoke `setup_cli.py`, `launch-python.ps1`, `launch-python.sh`, or a shell-command fallback from this skill.
-8. Explain the effective capabilities exactly:
-   - `restart=True` means the verified resident daemon owns future turns and can interrupt only its exact owned parent turn. Because Codex interrupts the whole parent turn, any current-generation parent or child activity invalidates the request; multiple live targets suppress automatic interruption.
-   - `goal_companion=True` is unavailable and fails before state, lease, timer, or app-server mutation with `goal_companion_atomic_update_unavailable`.
-   - `goal_companion=False` with `restart=True` means the daemon starts one same-task continuation and owns that exact turn. After verifying success, that turn must invoke `$work-off --completed` immediately before Final. This records only a verified-completion request; the daemon records completion and shuts down after the owned turn finishes normally. A normal `completed` outcome without that request starts another same-task continuation instead of claiming success. A matching live CMW interrupt claim may start one replacement; an external or unknown `interrupted` outcome or any `failed` outcome stops without claiming Final.
-   - `observe_only=True` means the daemon records local diagnostics without starting or interrupting a continuation.
-   - `live_warning=False` means heartbeats are local diagnostics and no message appears inside a Busy Codex turn.
-   - Passive Discord Remote mirroring can coexist. While managed restart owns the thread, Discord Remote `!stop` or steering uses a different app-server owner and must not be claimed as reliable; use `$work-off` for the owned turn.
-9. If managed restart is active, finish this activation turn after reporting successful setup. The daemon starts one Goal-less same-task continuation, then adopts that exact turn before any steering or interruption. Do not perform the real task inside the Desktop-owned activation turn.
-10. If managed restart is inactive, continue the user's real task in this turn.
-11. Before any final answer, verify every success criterion. In Goal-less managed mode, invoke `$work-off --completed` after verification and immediately before Final. That skill calls `cmw.complete`; the daemon records the final heartbeat and shuts down only after observing that exact owned turn's normal `completed` outcome. If a Goal-less turn completes without that request, continue the same task in another managed turn. A CMW-claimed interruption starts a replacement instead, while external interruption or failure stops without Final or a completion heartbeat.
-12. Call missing rollout output “no observable progress,” never proof that reasoning has stopped. Never scan `UserPromptSubmit` text for `$work-on`. The daemon's short-lived transcript fence must match the exact activation turn; a late app-server completion signal alone is not proof that activation ended.
+CMW observes one task's local events and sends configured Discord webhook notifications.
+It does not launch a Codex app server, create a continuation turn, interrupt a turn, or
+restart work.
+
+1. Read `session_id`, `transcript_path`, and `activation_turn_id` only from the
+   `codex_must_work_activation` object injected for this exact `$work-on`
+   `UserPromptSubmit` event. Require all three. Never infer them from prompt text,
+   rollout contents, selected UI state, or another task.
+2. Use the concrete task and success criteria already stated in the current thread. If
+   `$work-on` is the only task text available and the thread supplies no objective, ask
+   only for the objective.
+3. Call `cmw.settings` with action `show` to load the saved threshold selection. The
+   canonical defaults are `병목 의심` after `300000` milliseconds (`5m`) and
+   `심각 정체` after `600000` milliseconds (`10m`). Both are diagnostic notification
+   stages. A `recommended` or `custom` selection replaces those values only because
+   the user previously selected it.
+4. Never infer or reuse `activation_turn_id`. Call `cmw.work_on` once with only
+   `session_id`, `transcript_path`, `activation_turn_id`, `warning_after_ms`, and
+   `critical_after_ms`. Pass thresholds as integer milliseconds. Do not pass
+   task-control, permission, message-preset, goal-companion, or observe-only options.
+5. Call `cmw.status` with the same `session_id`. Activation is
+   successful only when status refers to that exact session. Report an MCP error
+   exactly; do not use `setup_cli.py`, launcher scripts, or a shell fallback.
+6. Continue the user's real task in the same turn. The monitor is passive: it reads
+   observable local progress and can send webhook messages, but it never takes control
+   of the task.
+7. Before the final answer, verify every success criterion. Then call `cmw.complete`
+   with the same session identity to record completion and stop monitoring. A user
+   cancellation instead uses `$work-off`, which calls `cmw.stop` and does not claim
+   success.
+8. Call missing rollout output “no observable progress,” never proof that reasoning has
+   stopped.

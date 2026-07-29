@@ -155,9 +155,9 @@ def test_real_index_mutation_after_copy_does_not_change_snapshot(
         max_stdout_bytes: int | None = None,
     ) -> bytes:
         nonlocal mutated
-        if environment is not None and not copied_indexes:
+        if environment is not None and "GIT_INDEX_FILE" in environment and not copied_indexes:
             copied_indexes.append(environment["GIT_INDEX_FILE"])
-        if environment is not None and not mutated:
+        if environment is not None and "GIT_INDEX_FILE" in environment and not mutated:
             mutated = True
             write_stage(path, "scripts/second.py", "print('second')\n")
         if environment is None:

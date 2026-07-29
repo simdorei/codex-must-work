@@ -17,6 +17,7 @@ class InstallResult:
     final_cache_matches_enabled_trust: bool
     created_cache_removed: bool
     external_config_conflict_after_failure: bool = False
+    warning_code: str | None = None
 
 
 def unobserved_failure(reason: str) -> InstallResult:
@@ -32,7 +33,7 @@ def unobserved_failure(reason: str) -> InstallResult:
     )
 
 
-def install_success() -> InstallResult:
+def install_success(warning_code: str | None = None) -> InstallResult:
     """Return the exact verified enabled-install success state."""
     return InstallResult(
         install_ok=True,
@@ -42,4 +43,5 @@ def install_success() -> InstallResult:
         final_plugin_disabled=False,
         final_cache_matches_enabled_trust=True,
         created_cache_removed=False,
+        warning_code=warning_code,
     )

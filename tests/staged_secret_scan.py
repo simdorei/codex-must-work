@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,6 +42,7 @@ from tests.staged_secret_scan_patterns import (
     has_control_path,
     is_allowed,
     is_forbidden_name,
+    is_scannable_binary,
 )
 from tests.staged_secret_scan_snapshot import capture_snapshot
 
@@ -76,9 +78,21 @@ class ScanResult:
     snapshot_id: str
 
 
+def _canonical_path(path: Path) -> Path:
+    """Resolve symlinks and normalize platform-specific path spelling."""
+    return Path(os.path.normcase(os.path.realpath(path)))
+
+
 def _repo_root(cwd: Path) -> Path:
+    source_root = _canonical_path(cwd)
+    discovery_environment = {"GIT_CEILING_DIRECTORIES": str(source_root.parent)}
     try:
-        raw = run_git(cwd, "rev-parse", "--show-toplevel")
+        raw = run_git(
+            source_root,
+            "rev-parse",
+            "--show-toplevel",
+            environment=discovery_environment,
+        )
     except ScanError as error:
         if error.rule == GIT_ERROR:
             raise ScanError(NOT_REPOSITORY) from error
@@ -89,7 +103,10 @@ def _repo_root(cwd: Path) -> Path:
         raise ScanError(MALFORMED_GIT_OUTPUT) from error
     if not text or "\n" in text or "\r" in text:
         raise ScanError(MALFORMED_GIT_OUTPUT)
-    return Path(text)
+    discovered_root = _canonical_path(Path(text))
+    if discovered_root != source_root:
+        raise ScanError(NOT_REPOSITORY)
+    return source_root
 
 
 def _scan_candidate(
@@ -123,7 +140,7 @@ def _scan_candidate(
         raise
     if len(data) > MAX_BLOB_BYTES:
         raise ScanError(OVERSIZE_BLOB, entry.path)
-    if b"\x00" in data:
+    if b"\x00" in data and not is_scannable_binary(entry.path):
         raise ScanError(BINARY_BLOB, entry.path)
     rule = finding(data)
     if rule is not None:

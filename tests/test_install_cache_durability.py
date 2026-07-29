@@ -50,7 +50,7 @@ def _publish(case: CacheCase, version: str = "1.0.0") -> CachePublication:
 
 
 def _target(case: CacheCase) -> Path:
-    return case[1] / "plugins" / "cache" / "codex-must-work-local" / "codex-must-work" / "1.0.0"
+    return case[1] / "plugins" / "cache" / "simdorei" / "codex-must-work" / "1.0.0"
 
 
 @pytest.mark.parametrize("scenario", _DURABILITY_CASES)

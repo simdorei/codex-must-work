@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import stat
 from collections.abc import Callable
+from contextlib import suppress
 from pathlib import Path
 from typing import Final, Never
 
@@ -73,6 +74,15 @@ def create_secure_directory(path: Path) -> Path:
     except FileExistsError:
         created = False
     if not secure_path(path, directory=True, apply=created):
+        _fail("cache_path_invalid")
+    return path
+
+
+def claim_secure_directory(path: Path) -> Path:
+    """Create or safely claim an existing direct directory for this plugin."""
+    with suppress(FileExistsError):
+        path.mkdir(mode=_DIRECTORY_MODE)
+    if not secure_path(path, directory=True, apply=True):
         _fail("cache_path_invalid")
     return path
 

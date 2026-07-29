@@ -4,11 +4,11 @@ import json
 import os
 import socket
 import threading
+from functools import partial
 from typing import TYPE_CHECKING, Protocol, cast
 
 import pytest
 
-from scripts.control_capability import derive_control_capability
 from scripts.daemon_control_endpoint import (
     ControlEndpoint,
     EndpointLocator,
@@ -16,17 +16,64 @@ from scripts.daemon_control_endpoint import (
 )
 from scripts.daemon_control_endpoint_identity import process_created_ns
 from scripts.mcp_server import McpServer
+from scripts.work_on_activation import ActivationIdentity, ActivationTicketStore
 from tests.cmw_process_probe_endpoint import (
     EndpointAttachError,
     EndpointClient,
     load_control_endpoint,
 )
+from tests.cmw_process_probe_io import SessionLocator
+from tests.cmw_process_probe_live import LiveDependencies
 from tests.test_daemon_control_endpoint import FakeDaemon
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 _KEY = b"k" * 32
+
+
+def _server_factory(plugin_data: Path) -> partial[McpServer]:
+    return partial(
+        McpServer,
+        activation_tickets=ActivationTicketStore(plugin_data, _KEY),
+    )
+
+
+def test_live_probe_activation_uses_supported_work_on_contract_at_real_endpoint(
+    tmp_path: Path,
+) -> None:
+    # Given
+    daemon = FakeDaemon()
+    session = "session-a"
+    turn_id = "turn-a"
+    plugin_data = tmp_path / "plugin-data"
+    _ = ActivationTicketStore(plugin_data, _KEY).issue(
+        ActivationIdentity(session, turn_id, str(tmp_path / "rollout.jsonl"))
+    )
+    locator_data = SessionLocator(
+        session_id=session,
+        transcript_path=tmp_path / "rollout.jsonl",
+        plugin_root=tmp_path,
+        plugin_data=plugin_data,
+        permission_mode="dontAsk",
+    )
+
+    # When
+    with ControlEndpoint(daemon, _KEY, plugin_data, _server_factory(plugin_data)) as published:
+        endpoint = load_control_endpoint(plugin_data, published.pid)
+        dependencies = LiveDependencies(
+            published.pid,
+            locator_data,
+            EndpointClient(endpoint),
+            0.01,
+            tmp_path,
+        )
+        dependencies.authorize_start(turn_id)
+        status = dependencies.control("start")
+
+    # Then
+    assert status == "started"
+    assert daemon.calls == ["start"]
 
 
 class _InetAddress(Protocol):
@@ -42,10 +89,8 @@ def test_client_attaches_to_exact_resident_identity_for_repeated_calls(
 ) -> None:
     # Given
     daemon = FakeDaemon()
-    capability = derive_control_capability(_KEY, "session-a")
-
     # When
-    with ControlEndpoint(daemon, _KEY, tmp_path, McpServer) as published:
+    with ControlEndpoint(daemon, _KEY, tmp_path, _server_factory(tmp_path)) as published:
         locator = load_control_endpoint(tmp_path, published.pid)
         client = EndpointClient(locator)
         responses = tuple(
@@ -53,7 +98,6 @@ def test_client_attaches_to_exact_resident_identity_for_repeated_calls(
                 "cmw.status",
                 {
                     "session_id": "session-a",
-                    "control_capability": capability,
                 },
             )
             for _ in range(100)
@@ -71,7 +115,7 @@ def test_client_rejects_stale_or_malformed_locator(
     field: str,
 ) -> None:
     # Given
-    with ControlEndpoint(FakeDaemon(), _KEY, tmp_path, McpServer) as locator:
+    with ControlEndpoint(FakeDaemon(), _KEY, tmp_path, _server_factory(tmp_path)) as locator:
         path = control_endpoint_path(tmp_path)
         values = cast(
             "dict[str, object]",
@@ -96,8 +140,7 @@ def test_client_rejects_stale_or_malformed_locator(
 
 def test_client_error_never_discloses_endpoint_or_session_secrets(tmp_path: Path) -> None:
     # Given
-    capability = derive_control_capability(_KEY, "session-a")
-    with ControlEndpoint(FakeDaemon(), _KEY, tmp_path, McpServer) as published:
+    with ControlEndpoint(FakeDaemon(), _KEY, tmp_path, _server_factory(tmp_path)) as published:
         locator = load_control_endpoint(tmp_path, published.pid)
     client = EndpointClient(locator)
 
@@ -105,16 +148,14 @@ def test_client_error_never_discloses_endpoint_or_session_secrets(tmp_path: Path
     with pytest.raises(EndpointAttachError) as raised:
         _ = client.call(
             "cmw.status",
-            {"session_id": "session-a", "control_capability": capability},
+            {"session_id": "session-a"},
         )
     rendered = str(raised.value)
-    assert capability not in rendered
     assert locator.endpoint_nonce not in rendered
 
 
-def test_client_authenticates_server_before_sending_either_secret() -> None:
+def test_client_authenticates_server_before_sending_session_identity() -> None:
     # Given
-    capability = derive_control_capability(_KEY, "session-a")
     endpoint_nonce = "n" * 43
     captured: list[bytes] = []
     ready = threading.Event()
@@ -146,10 +187,9 @@ def test_client_authenticates_server_before_sending_either_secret() -> None:
                 "cmw.status",
                 {
                     "session_id": "session-a",
-                    "control_capability": capability,
                 },
             )
         worker.join(1.0)
     assert len(captured) == 1
-    assert capability.encode() not in captured[0]
+    assert b"session-a" not in captured[0]
     assert endpoint_nonce.encode() not in captured[0]

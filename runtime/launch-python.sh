@@ -38,14 +38,14 @@ if [ -e "$prepared_target" ] && [ ! -x "$prepared_python" ]; then
     exit 1
 fi
 if [ -x "$prepared_python" ]; then
-    exec "$prepared_python" -B "$@"
+    exec "$prepared_python" -I -B "$@"
 fi
 
 mkdir -p "$data_root"
 i=0
 while ! mkdir "$lock" 2>/dev/null; do
     if [ -x "$python" ]; then
-        exec "$python" -B "$@"
+        exec "$python" -I -B "$@"
     fi
     i=$((i + 1))
     if [ "$i" -ge 550 ]; then
@@ -100,4 +100,4 @@ fi
 
 cleanup
 trap - EXIT HUP INT TERM
-exec "$python" -B "$@"
+exec "$python" -I -B "$@"

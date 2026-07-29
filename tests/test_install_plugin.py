@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
-from scripts import cache_publication, install_plugin, installer_observation
+from scripts import (
+    cache_publication,
+    install_plugin,
+    installer_cache_observation,
+    installer_observation_config,
+)
 from scripts.cache_types import CacheIdentity, CachePublication
 from scripts.codex_config import update_codex_config as real_update_codex_config
 from scripts.hook_trust import read_plugin_manifest
@@ -26,14 +32,17 @@ if TYPE_CHECKING:
     from scripts.codex_compatibility import CompatibilityResult
     from scripts.codex_config import ConfigMutation
     from scripts.installer_lock import InstallerLease
-    from scripts.installer_observation import ConfigObservation
+    from scripts.installer_observation_config import ConfigObservation
 
 pytest_plugins = ("tests.install_plugin_fixtures",)
 
 
 def test_initial_install_orders_disabled_before_cache_and_two_revalidations(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_install_receipt: None,
 ) -> None:
+    _ = synthetic_install_receipt
     home = tmp_path / "home"
     home.mkdir()
     source = source_fixture(tmp_path)
@@ -55,12 +64,12 @@ def test_initial_install_orders_disabled_before_cache_and_two_revalidations(
         enabled: bool | None = None
         if config.exists():
             raw = config.read_text(encoding="utf-8")
-            plugin_block = raw.split(
-                '[plugins."codex-must-work@codex-must-work-local"]', maxsplit=1
-            )[1].split("\n[", maxsplit=1)[0]
+            plugin_block = raw.split('[plugins."codex-must-work@simdorei"]', maxsplit=1)[1].split(
+                "\n[", maxsplit=1
+            )[0]
             enabled = "enabled = true\n" in plugin_block
             if enabled is False:
-                assert raw.count('[hooks.state."codex-must-work@codex-must-work-local:') == 1
+                assert raw.count('[hooks.state."codex-must-work@simdorei:') == 1
         events.append(f"validate_cache:{enabled}")
         return publication.identity, publication.digest
 
@@ -68,7 +77,7 @@ def test_initial_install_orders_disabled_before_cache_and_two_revalidations(
     monkeypatch.setattr(install_plugin, "publish_cache", publish)
     monkeypatch.setattr(install_plugin, "trusted_states", trusted_states)
     monkeypatch.setattr(install_plugin, "validate_cache_publication", validate, raising=False)
-    monkeypatch.setattr(installer_observation, "validate_cache_publication", validate)
+    monkeypatch.setattr(installer_cache_observation, "validate_cache_publication", validate)
 
     result = install(home.resolve(), source)
 
@@ -98,7 +107,7 @@ def test_disabled_trust_must_be_exact_before_compatibility_or_enable(
     compatibility = compatibility_fixture(home)
     compatibility_requires_plugins = 0
     enabled_mutations: list[bool] = []
-    original_observe = installer_observation.observe_config
+    original_observe = installer_observation_config.observe_config
 
     def check(*_args: InstallerCallValue, **kwargs: InstallerCallValue) -> CompatibilityResult:
         nonlocal compatibility_requires_plugins
@@ -122,7 +131,7 @@ def test_disabled_trust_must_be_exact_before_compatibility_or_enable(
             and observed.source_root is not None
             and len(observed.trusted_hooks) == 1
         ):
-            return installer_observation.ConfigObservation(
+            return installer_observation_config.ConfigObservation(
                 observed.snapshot,
                 observed.plugin_present,
                 observed.plugin_disabled,
@@ -137,7 +146,7 @@ def test_disabled_trust_must_be_exact_before_compatibility_or_enable(
     monkeypatch.setattr(install_plugin, "trusted_states", trusted_states)
     monkeypatch.setattr(install_plugin, "update_codex_config", update)
     monkeypatch.setattr(install_plugin, "observe_config", observe)
-    monkeypatch.setattr(installer_observation, "observe_config", observe)
+    monkeypatch.setattr(installer_observation_config, "observe_config", observe)
 
     result = install(home.resolve(), source)
 
@@ -164,13 +173,7 @@ def test_real_full_tree_corruption_before_enable_never_publishes_enabled(
         if kwargs.get("require_plugins") is True and not corrupted:
             version = read_plugin_manifest(source).version
             cached = (
-                home
-                / "plugins"
-                / "cache"
-                / "codex-must-work-local"
-                / "codex-must-work"
-                / version
-                / "README.md"
+                home / "plugins" / "cache" / "simdorei" / "codex-must-work" / version / "README.md"
             )
             _ = cached.write_bytes(b"corrupted-before-enable")
             corrupted = True
@@ -196,8 +199,12 @@ def test_real_full_tree_corruption_before_enable_never_publishes_enabled(
 
 @pytest.mark.parametrize("failure_call", [2, 3])
 def test_pre_enable_or_post_enable_revalidation_failure_disables_and_removes_cache(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure_call: int
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_call: int,
+    synthetic_install_receipt: None,
 ) -> None:
+    _ = synthetic_install_receipt
     home = tmp_path / "home"
     home.mkdir()
     source = source_fixture(tmp_path)
@@ -220,7 +227,7 @@ def test_pre_enable_or_post_enable_revalidation_failure_disables_and_removes_cac
     def remove(path: Path, identity: CacheIdentity) -> None:
         metadata = path.stat()
         assert CacheIdentity(metadata.st_dev, metadata.st_ino) == identity
-        path.rmdir()
+        shutil.rmtree(path)
 
     monkeypatch.setattr(install_plugin, "validate_codex_compatibility", check)
     monkeypatch.setattr(install_plugin, "publish_cache", publish)
@@ -236,16 +243,19 @@ def test_pre_enable_or_post_enable_revalidation_failure_disables_and_removes_cac
     assert result.final_plugin_disabled is True
     assert result.final_cache_matches_enabled_trust is False
     assert result.created_cache_removed is True
-    expected = home / "plugins" / "cache" / "codex-must-work-local" / "codex-must-work" / "1.2.3"
+    expected = home / "plugins" / "cache" / "simdorei" / "codex-must-work" / "1.2.3"
     assert not expected.exists()
 
 
 def test_already_disabled_config_is_byte_identical_until_cache_publication(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_install_receipt: None,
 ) -> None:
+    _ = synthetic_install_receipt
     home = tmp_path / "home"
     home.mkdir()
-    original = b'[plugins."codex-must-work@codex-must-work-local"]\nenabled = false\n'
+    original = b'[plugins."codex-must-work@simdorei"]\nenabled = false\n'
     _ = (home / "config.toml").write_bytes(original)
     source = source_fixture(tmp_path)
     compatibility = compatibility_fixture(home)

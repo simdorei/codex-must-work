@@ -64,6 +64,7 @@ class LiveDependencies:
         self._locator = locator
         self._client = client
         self._duration_seconds = duration_seconds
+        self._activation_turn_id: str | None = None
         self._trace = EtwSession(output_directory)
         self._boundary_wall_ns = 0
         self._boundary_monotonic = 0.0
@@ -71,6 +72,10 @@ class LiveDependencies:
         self._heartbeat = time.monotonic()
         self._samples: list[ProcessSample] = []
         self._completed_trace: TraceWindow | None = None
+
+    def authorize_start(self, activation_turn_id: str) -> None:
+        """Bind a hook-issued activation turn to the next start control."""
+        self._activation_turn_id = activation_turn_id
 
     def start_trace(self) -> None:
         if os.name != "nt":
@@ -95,23 +100,14 @@ class LiveDependencies:
         return sample
 
     def control(self, action: str) -> str:
-        arguments: JsonObject = {
-            "session_id": self._locator.session_id,
-            "control_capability": self._locator.control_capability,
-        }
+        arguments: JsonObject = {"session_id": self._locator.session_id}
         if action == "start":
+            if self._activation_turn_id is None:
+                reason = "work_on_activation_turn_id_required"
+                raise ProbeExecutionError(reason)
             arguments["transcript_path"] = str(self._locator.transcript_path)
-            arguments["goal_companion"] = False
-            arguments["observe_only"] = True
-            if self._locator.permission_mode in {
-                "default",
-                "acceptEdits",
-                "plan",
-                "dontAsk",
-                "bypassPermissions",
-            }:
-                arguments["permission_mode"] = self._locator.permission_mode
-            response = self._client.call("cmw.start", arguments)
+            arguments["activation_turn_id"] = self._activation_turn_id
+            response = self._client.call("cmw.work_on", arguments)
         elif action == "stop":
             response = self._client.call("cmw.stop", arguments)
         else:

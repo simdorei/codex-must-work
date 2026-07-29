@@ -58,6 +58,8 @@ def main(argv: list[str] | None = None) -> int:
             arguments.duration_seconds,
             output.parent,
         )
+        if arguments.activation_turn_id is not None:
+            dependencies.authorize_start(arguments.activation_turn_id)
         limits = ProbeLimits(
             max_cpu_seconds=arguments.max_cpu_seconds,
             max_handle_growth=arguments.max_handle_growth,
@@ -100,6 +102,7 @@ def _parse_args(argv: list[str] | None) -> _ProbeArgs:
     _ = parser.add_argument("--daemon-pid", type=_positive_int, required=True)
     _ = parser.add_argument("--rollout", type=Path, required=True)
     _ = parser.add_argument("--session-id", required=True)
+    _ = parser.add_argument("--activation-turn-id")
     _ = parser.add_argument("--lifecycle", type=Lifecycle, choices=tuple(Lifecycle), required=True)
     _ = parser.add_argument("--duration-seconds", type=_positive_float, required=True)
     _ = parser.add_argument("--cycle-count", type=_nonnegative_int, required=True)
@@ -122,6 +125,8 @@ def _parse_args(argv: list[str] | None) -> _ProbeArgs:
         parser.error("--require-zero-event-loss is required")
     if namespace.lifecycle is Lifecycle.OBSERVE_INACTIVE and namespace.cycle_count != 0:
         parser.error("observe-inactive requires --cycle-count 0")
+    if namespace.lifecycle is Lifecycle.START_STOP and not namespace.activation_turn_id:
+        parser.error("start-stop requires --activation-turn-id")
     return namespace
 
 
@@ -162,6 +167,7 @@ class _ProbeArgs(argparse.Namespace):
     daemon_pid: int
     rollout: Path
     session_id: str
+    activation_turn_id: str | None
     lifecycle: Lifecycle
     duration_seconds: float
     cycle_count: int
@@ -180,6 +186,7 @@ class _ProbeArgs(argparse.Namespace):
         self.daemon_pid = 0
         self.rollout = Path()
         self.session_id = ""
+        self.activation_turn_id = None
         self.lifecycle = Lifecycle.START_STOP
         self.duration_seconds = 0.0
         self.cycle_count = 0

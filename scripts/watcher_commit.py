@@ -5,10 +5,10 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import TYPE_CHECKING
 
+from scripts.monitor_state import runtime_target_from_values
+from scripts.monitor_target import RuntimeTarget
 from scripts.state import mutate_existing_state
 from scripts.watcher_batch import TargetBatch, commit_target_cursor
-from scripts.watcher_models import RuntimeTarget
-from scripts.watcher_state import runtime_target_from_values
 
 if TYPE_CHECKING:
     from collections.abc import Callable

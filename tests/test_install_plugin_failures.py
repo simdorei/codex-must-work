@@ -9,7 +9,7 @@ import pytest
 from scripts import (
     cache_publication,
     install_plugin,
-    installer_observation,
+    installer_observation_config,
 )
 from scripts.codex_config import update_codex_config as real_update_codex_config
 from scripts.install_errors import InstallPluginError
@@ -120,7 +120,7 @@ def test_final_observation_failure_returns_privacy_safe_result(
         final_phase = compatibility_calls == 3
         return compatibility
 
-    original_observe = installer_observation.observe_config
+    original_observe = installer_observation_config.observe_config
 
     def observe(path: Path, lease: InstallerLease) -> ConfigObservation:
         if final_phase:
@@ -186,7 +186,7 @@ def test_lock_failure_never_claims_unobserved_plugin_disabled(
         return FailingLock()
 
     monkeypatch.setattr(install_plugin, "installer_lock", fail_lock)
-    result = install(home.resolve(), tmp_path.resolve())
+    result = install(home.resolve(), source_fixture(tmp_path))
     assert not result.install_ok
     assert result.error_code == "installer_lock_failed"
     assert result.primary_error_code == "installer_lock_failed"
@@ -257,7 +257,7 @@ def test_cleanup_conflict_never_deletes_replacement_cache(
     monkeypatch.setattr(install_plugin, "publish_cache", publish)
     monkeypatch.setattr(install_plugin, "trusted_states", trusted_states)
     result = install(home.resolve(), source)
-    replacement = home / "plugins" / "cache" / "codex-must-work-local" / "codex-must-work" / "1.2.3"
+    replacement = home / "plugins" / "cache" / "simdorei" / "codex-must-work" / "1.2.3"
     assert not result.install_ok
     assert result.created_cache_removed is False
     assert result.external_config_conflict_after_failure is True

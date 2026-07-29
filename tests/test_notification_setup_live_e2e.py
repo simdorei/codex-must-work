@@ -13,12 +13,14 @@ from tests.notification_setup_live_e2e import (
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from scripts.state_io import JsonValue
+
 
 def _webhook(webhook_id: str, token: str) -> str:
     return f"https://discord.com/api/webhooks/{webhook_id}/{token}"
 
 
-def _write_rollout(tmp_path: Path, thread_id: str, rows: list[object]) -> None:
+def _write_rollout(tmp_path: Path, thread_id: str, rows: list[JsonValue]) -> None:
     sessions = tmp_path / ".codex" / "sessions"
     sessions.mkdir(parents=True)
     rollout = sessions / f"rollout-{thread_id}.jsonl"

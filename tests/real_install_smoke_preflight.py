@@ -20,7 +20,7 @@ type TomlValue = str | int | float | bool | list[TomlValue] | dict[str, TomlValu
 type TomlTable = dict[str, TomlValue]
 
 _LAZY_NAME: Final = "lazy-eng-study-codex"
-_CMW_PLUGIN: Final = "codex-must-work@codex-must-work-local"
+_CMW_PLUGIN: Final = "codex-must-work@simdorei"
 _HOOK_PATH: Final = "hooks/hooks.json"
 
 

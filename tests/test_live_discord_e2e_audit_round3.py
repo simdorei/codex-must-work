@@ -200,8 +200,8 @@ def test_plan_style_basic_preflight_auto_resolves_bot_and_digest(
         tmp_path / "data",
         "dontAsk",
         PACKAGE_DIGEST,
-        "x" * 43,
     )
+
     def located(_path: Path) -> PreflightLocator:
         return locator
 

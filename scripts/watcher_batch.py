@@ -17,7 +17,7 @@ from scripts.watcher_source import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from scripts.watcher_models import RuntimeTarget
+    from scripts.monitor_target import RuntimeTarget
 
 
 @dataclass(frozen=True, slots=True)

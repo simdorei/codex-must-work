@@ -3,7 +3,7 @@
     "codex-must-work": {
       "command": "runtime/launch-python.exe",
       "args": [
-        "scripts/mcp_server.py"
+        "scripts/mcp_bootstrap.py"
       ],
       "cwd": ".",
       "env": {

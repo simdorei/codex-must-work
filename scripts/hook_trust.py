@@ -40,7 +40,7 @@ class HookPlatform(StrEnum):
 
 
 class _HookEvent(StrEnum):
-    SESSION_START = "SessionStart"
+    USER_PROMPT_SUBMIT = "UserPromptSubmit"
 
     @property
     def key_label(self) -> str:
@@ -49,7 +49,7 @@ class _HookEvent(StrEnum):
 
 _APPROVED_EVENTS: Final = tuple(_HookEvent)
 _EVENT_LABELS: Final = {
-    _HookEvent.SESSION_START: "session_start",
+    _HookEvent.USER_PROMPT_SUBMIT: "user_prompt_submit",
 }
 TRUSTED_HOOK_LABELS: Final = tuple(event.key_label for event in _APPROVED_EVENTS)
 TRUSTED_HOOK_COUNT: Final = len(TRUSTED_HOOK_LABELS)

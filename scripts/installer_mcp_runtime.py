@@ -13,11 +13,13 @@ from typing import TYPE_CHECKING, Final, Never, assert_never
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from typing import BinaryIO
 
 from scripts.cache_publication import rename_no_replace
 from scripts.cache_security import require_directory, secure_path
 from scripts.cache_types import CacheIdentity, identity
 from scripts.install_errors import InstallPluginError
+from scripts.runtime_bytecode import remove_generated_bytecode
 from scripts.runtime_cleanup import delete_runtime_tree
 from scripts.runtime_tree import (
     RuntimeTreeManifest,
@@ -25,6 +27,8 @@ from scripts.runtime_tree import (
     materialize_archive,
     validate_runtime_tree,
 )
+from scripts.state import StateError
+from scripts.state_io import open_direct_file
 
 
 class RuntimePlatform(StrEnum):
@@ -108,7 +112,8 @@ _MACOS: Final = RuntimeSpec(
     3,
 )
 _WRAPPER: Final = (
-    '#!/bin/sh\nexport PYTHONDONTWRITEBYTECODE=1\nexec "$(dirname -- "$0")/bin/python3" -B "$@"\n'
+    "#!/bin/sh\nexport PYTHONDONTWRITEBYTECODE=1\n"
+    'exec "$(dirname -- "$0")/bin/python3" -I -B "$@"\n'
 )
 
 
@@ -120,7 +125,7 @@ def prepare_mcp_runtime(
     """Prepare or reuse the direct MCP runtime without a resident shell."""
     require_directory(source_root, "package_source_unsafe")
     require_directory(data_root, "plugin_data_root_invalid")
-    selected = _current_spec() if spec is None else spec
+    selected = current_runtime_spec() if spec is None else spec
     manifest = load_runtime_manifest(
         source_root / "runtime" / "manifests" / selected.manifest_name,
         selected.manifest_sha256,
@@ -132,23 +137,24 @@ def prepare_mcp_runtime(
     existing = _existing(target, manifest)
     if existing is not None:
         return existing
-    archive = source_root / "runtime" / "archives" / selected.archive_name
-    if _sha256(archive) != selected.sha256:
-        raise InstallPluginError(_ARCHIVE_HASH_MISMATCH)
+    archive_path = source_root / "runtime" / "archives" / selected.archive_name
     stage = data_root / f".portable-python-stage-{secrets.token_hex(16)}"
     stage_cleanup: _CleanupTarget | None = None
     runtime_cleanup: _CleanupTarget | None = None
     try:
-        stage.mkdir(mode=0o700)
-        if not secure_path(stage, directory=True, apply=True):
-            _fail(_PUBLICATION_FAILED)
-        stage_cleanup = _CleanupTarget(
-            stage,
-            identity(stage.lstat()),
-            data_root,
-            ".portable-python-stage-",
-        )
-        materialize_archive(archive, stage, manifest)
+        with _open_archive(archive_path) as archive:
+            if _sha256(archive) != selected.sha256:
+                _fail(_ARCHIVE_HASH_MISMATCH)
+            stage.mkdir(mode=0o700)
+            if not secure_path(stage, directory=True, apply=True):
+                _fail(_PUBLICATION_FAILED)
+            stage_cleanup = _CleanupTarget(
+                stage,
+                identity(stage.lstat()),
+                data_root,
+                ".portable-python-stage-",
+            )
+            materialize_archive(archive, stage, manifest)
         extracted = stage / "python"
         match selected.platform:
             case RuntimePlatform.WINDOWS:
@@ -196,7 +202,8 @@ def remove_created_mcp_runtime(
     )
 
 
-def _current_spec() -> RuntimeSpec:
+def current_runtime_spec() -> RuntimeSpec:
+    """Return the portable runtime generation for this supported host."""
     machine = platform.machine().lower()
     if os.name == "nt" and machine in {"amd64", "x86_64"}:
         return _WINDOWS
@@ -212,21 +219,42 @@ def _existing(
     manifest: RuntimeTreeManifest,
 ) -> McpRuntimePublication | None:
     try:
-        _ = target.lstat()
+        _ = identity(target.lstat())
     except FileNotFoundError:
         return None
     except OSError as error:
         raise InstallPluginError(_INVALID) from error
-    runtime_identity = validate_runtime_tree(target, manifest, apply_permissions=False)
+    try:
+        runtime_identity = validate_runtime_tree(target, manifest, apply_permissions=False)
+    except InstallPluginError as error:
+        if error.reason_code != _INVALID or not remove_generated_bytecode(target, manifest):
+            raise
+        runtime_identity = validate_runtime_tree(target, manifest, apply_permissions=False)
     return McpRuntimePublication(target, runtime_identity, created_by_run=False)
 
 
-def _sha256(path: Path) -> str:
+def _open_archive(path: Path) -> BinaryIO:
+    """Open one identity-bound archive without following its final path."""
     try:
-        with path.open("rb") as handle:
-            return hashlib.file_digest(handle, "sha256").hexdigest()
+        descriptor = open_direct_file(
+            path,
+            os.O_RDONLY | getattr(os, "O_BINARY", 0),
+        )
+        return os.fdopen(descriptor, "rb")
+    except (OSError, StateError) as error:
+        raise InstallPluginError(_ARCHIVE_MISSING) from error
+
+
+def _sha256(archive: BinaryIO) -> str:
+    """Hash and rewind the exact archive descriptor used for extraction."""
+    try:
+        hasher = hashlib.sha256()
+        while chunk := archive.read(64 * 1024):
+            hasher.update(chunk)
+        _ = archive.seek(0)
     except OSError as error:
         raise InstallPluginError(_ARCHIVE_MISSING) from error
+    return hasher.hexdigest()
 
 
 def _remove_tree(target: _CleanupTarget) -> None:

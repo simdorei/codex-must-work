@@ -24,11 +24,11 @@ def _json_loader() -> _JsonLoader:
 
 _LOAD_JSON: Final = _json_loader()
 _SOURCE_ROOT: Final = Path(__file__).parents[1]
-_KEYS: Final = ("codex-must-work@codex-must-work-local:hooks/hooks.json:session_start:0:0",)
+_KEYS: Final = ("codex-must-work@simdorei:hooks/hooks.json:user_prompt_submit:0:0",)
 _WINDOWS_HASHES: Final = (
-    "sha256:bc47873f83656027c970cf9b656dbe96f1809f20eb658b5843529e4be0788e1c",
+    "sha256:46351e07d2a3f20f5ba0f9733b3bfbd18ee9c9821789249e8596316b14d0e30a",
 )
-_POSIX_HASHES: Final = ("sha256:002cb7f93a1c9ac91f32267bba2b9d579eb6981536fbd30b7007c46aa1d95621",)
+_POSIX_HASHES: Final = ("sha256:2ffaeb663ac780875b3e5c023ffd457beda4e73274b932518944cce7aef08345",)
 
 
 def _copy_plugin(tmp_path: Path) -> Path:
@@ -80,7 +80,7 @@ def _handler(events: JsonObject, event: str) -> JsonObject:
 
 
 def _states(root: Path, platform: HookPlatform) -> tuple[TrustedHookState, ...]:
-    return trusted_hook_states_for_plugin(root, "codex-must-work-local", platform)
+    return trusted_hook_states_for_plugin(root, "simdorei", platform)
 
 
 @contextmanager
@@ -144,11 +144,11 @@ def test_explicit_hook_path_normalizes_to_exact_source(
 
 
 def test_matcher_changes_hash_for_matcher_supporting_event(tmp_path: Path) -> None:
-    # Given: SessionStart receives a meaningful Codex matcher.
+    # Given: UserPromptSubmit receives a meaningful Codex matcher.
     root = _copy_plugin(tmp_path)
     hooks_path = root / "hooks" / "hooks.json"
     before, document = _states(root, HookPlatform.POSIX), _read_object(hooks_path)
-    _group(_events(document), "SessionStart")["matcher"] = "resume"
+    _group(_events(document), "UserPromptSubmit")["matcher"] = "resume"
     _write_object(hooks_path, document)
 
     # When: the modified manifest is fingerprinted.
@@ -159,11 +159,11 @@ def test_matcher_changes_hash_for_matcher_supporting_event(tmp_path: Path) -> No
 
 
 def test_windows_command_falls_back_only_when_override_is_absent(tmp_path: Path) -> None:
-    # Given: SessionStart omits commandWindows while retaining its POSIX command.
+    # Given: UserPromptSubmit omits commandWindows while retaining its POSIX command.
     root = _copy_plugin(tmp_path)
     hooks_path = root / "hooks" / "hooks.json"
     document = _read_object(hooks_path)
-    _ = _handler(_events(document), "SessionStart").pop("commandWindows")
+    _ = _handler(_events(document), "UserPromptSubmit").pop("commandWindows")
     _write_object(hooks_path, document)
 
     # When: Windows and POSIX identities are calculated.
@@ -185,7 +185,7 @@ def test_timeout_uses_default_and_minimum(
     for root, timeout in zip(roots, (first, second), strict=True):
         hooks_path = root / "hooks" / "hooks.json"
         document = _read_object(hooks_path)
-        handler = _handler(_events(document), "SessionStart")
+        handler = _handler(_events(document), "UserPromptSubmit")
         if timeout is None:
             _ = handler.pop("timeout")
         else:
@@ -204,7 +204,7 @@ def test_status_message_is_preserved_in_hash(tmp_path: Path) -> None:
     root = _copy_plugin(tmp_path)
     hooks_path = root / "hooks" / "hooks.json"
     before, document = _states(root, HookPlatform.POSIX), _read_object(hooks_path)
-    _handler(_events(document), "SessionStart")["statusMessage"] = "Waiting"
+    _handler(_events(document), "UserPromptSubmit")["statusMessage"] = "Waiting"
     _write_object(hooks_path, document)
 
     # When: the updated identity is calculated.
@@ -260,29 +260,29 @@ def test_rejects_invalid_manifest_without_partial_trust(  # noqa: C901, PLR0912,
         case "malformed_hooks":
             _ = hooks_path.write_text("{", encoding="utf-8")
         case "missing_event":
-            _ = events.pop("SessionStart")
+            _ = events.pop("UserPromptSubmit")
         case "extra_event":
-            events["PreCompact"] = events["SessionStart"]
+            events["PreCompact"] = events["UserPromptSubmit"]
         case "async":
-            _handler(events, "SessionStart")["async"] = True
+            _handler(events, "UserPromptSubmit")["async"] = True
         case "non_command":
-            _handler(events, "SessionStart")["type"] = "prompt"
+            _handler(events, "UserPromptSubmit")["type"] = "prompt"
         case "empty":
-            _handler(events, "SessionStart")["command"] = " "
+            _handler(events, "UserPromptSubmit")["command"] = " "
         case "multiple_groups":
-            groups = events["SessionStart"]
+            groups = events["UserPromptSubmit"]
             assert isinstance(groups, list)
             groups.append(groups[0])
         case "multiple_handlers":
-            handlers = _group(events, "SessionStart")["hooks"]
+            handlers = _group(events, "UserPromptSubmit")["hooks"]
             assert isinstance(handlers, list)
             handlers.append(handlers[0])
         case "timeout":
-            _handler(events, "SessionStart")["timeout"] = -1
+            _handler(events, "UserPromptSubmit")["timeout"] = -1
         case "matcher":
-            _group(events, "SessionStart")["matcher"] = 7
+            _group(events, "UserPromptSubmit")["matcher"] = 7
         case "status":
-            _handler(events, "SessionStart")["statusMessage"] = 7
+            _handler(events, "UserPromptSubmit")["statusMessage"] = 7
         case "missing_file":
             hooks_path.unlink()
         case _:

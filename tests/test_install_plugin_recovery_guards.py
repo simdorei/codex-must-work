@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import shutil
 from typing import TYPE_CHECKING
 
 import pytest
 
-from scripts import cache_publication, install_plugin, installer_observation
+from scripts import cache_publication, install_plugin, installer_prior_observation
 from scripts.cache_types import CacheIdentity, CachePublication
 from scripts.install_errors import InstallPluginError
 from scripts.install_plugin import install
@@ -29,8 +30,11 @@ pytest_plugins = ("tests.install_plugin_fixtures",)
 
 
 def test_recovery_never_overwrites_external_writer_when_prior_is_restorable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_install_receipt: None,
 ) -> None:
+    _ = synthetic_install_receipt
     home = tmp_path / "home"
     home.mkdir()
     old_source = source_fixture(tmp_path, "1.0.0", "source-old")
@@ -60,13 +64,13 @@ def test_recovery_never_overwrites_external_writer_when_prior_is_restorable(
     monkeypatch.setattr(install_plugin, "validate_codex_compatibility", ok)
     monkeypatch.setattr(install_plugin, "publish_cache", publisher(home))
     monkeypatch.setattr(install_plugin, "trusted_states", trusted_states)
-    monkeypatch.setattr(installer_observation, "snapshot_retained_cache", snapshot)
-    monkeypatch.setattr(installer_observation, "retained_cache_matches", retained)
+    monkeypatch.setattr(installer_prior_observation, "snapshot_retained_cache", snapshot)
+    monkeypatch.setattr(installer_prior_observation, "retained_cache_matches", retained)
 
     def trusted(path: Path, _marketplace: str) -> tuple[TrustedHookState, ...]:
         return trusted_states(path)
 
-    monkeypatch.setattr(installer_observation, "trusted_hook_states_for_plugin", trusted)
+    monkeypatch.setattr(installer_prior_observation, "trusted_hook_states_for_plugin", trusted)
     assert install(home.resolve(), old_source).install_ok
     config = home / "config.toml"
 
@@ -89,7 +93,7 @@ def test_recovery_never_overwrites_external_writer_when_prior_is_restorable(
     def external_then_remove(path: Path, expected: CacheIdentity) -> None:
         _ = config.write_bytes(b'external_marker = "keep"\n' + config.read_bytes())
         assert CacheIdentity(path.stat().st_dev, path.stat().st_ino) == expected
-        path.rmdir()
+        shutil.rmtree(path)
 
     monkeypatch.setattr(install_plugin, "validate_codex_compatibility", fail_upgrade)
     monkeypatch.setattr(cache_publication, "remove_tree", external_then_remove)
@@ -107,7 +111,7 @@ def test_malformed_or_unreadable_enabled_prior_cache_is_safely_disabled(
     home = tmp_path / "home"
     home.mkdir()
     source = source_fixture(tmp_path)
-    prior = home / "plugins" / "cache" / "codex-must-work-local" / "codex-must-work" / "0.9.0"
+    prior = home / "plugins" / "cache" / "simdorei" / "codex-must-work" / "0.9.0"
     prior.mkdir(parents=True)
     raw = unsafe_prior_config(prior.resolve(), "incomplete")
     last = trusted_states(prior)[-1]
@@ -137,7 +141,11 @@ def test_malformed_or_unreadable_enabled_prior_cache_is_safely_disabled(
             message = "injected unreadable prior cache"
             raise OSError(message)
 
-        monkeypatch.setattr(installer_observation, "trusted_hook_states_for_plugin", unreadable)
+        monkeypatch.setattr(
+            installer_prior_observation,
+            "trusted_hook_states_for_plugin",
+            unreadable,
+        )
     monkeypatch.setattr(install_plugin, "validate_codex_compatibility", check)
     monkeypatch.setattr(install_plugin, "publish_cache", fail_publish)
     monkeypatch.setattr(install_plugin, "trusted_states", trusted_states)
@@ -149,8 +157,11 @@ def test_malformed_or_unreadable_enabled_prior_cache_is_safely_disabled(
 
 
 def test_valid_reinstall_with_legacy_enabled_runs_transaction_and_disables_legacy(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_install_receipt: None,
 ) -> None:
+    _ = synthetic_install_receipt
     home = tmp_path / "home"
     home.mkdir()
     source = source_fixture(tmp_path)
@@ -193,17 +204,19 @@ def test_valid_reinstall_with_legacy_enabled_runs_transaction_and_disables_legac
     monkeypatch.setattr(install_plugin, "validate_codex_compatibility", check)
     monkeypatch.setattr(install_plugin, "publish_cache", publish)
     monkeypatch.setattr(install_plugin, "trusted_states", trusted_states)
-    monkeypatch.setattr(installer_observation, "snapshot_retained_cache", snapshot)
-    monkeypatch.setattr(installer_observation, "retained_cache_matches", matches)
-    monkeypatch.setattr(installer_observation, "trusted_hook_states_for_plugin", trusted)
+    monkeypatch.setattr(installer_prior_observation, "snapshot_retained_cache", snapshot)
+    monkeypatch.setattr(installer_prior_observation, "retained_cache_matches", matches)
+    monkeypatch.setattr(installer_prior_observation, "trusted_hook_states_for_plugin", trusted)
     assert install(home.resolve(), source).install_ok
     config = home / "config.toml"
     _ = config.write_bytes(
-        config.read_bytes() + b'\n[plugins."codex-must-work@simdorei"]\nenabled = true # legacy\n'
+        config.read_bytes()
+        + b'\n[plugins."codex-must-work@codex-must-work-local"]\n'
+        + b"enabled = true # legacy\n"
     )
 
     result = install(home.resolve(), source)
 
     assert result.install_ok
     assert publications == 2
-    assert b"enabled = false # legacy" in config.read_bytes()
+    assert b"codex-must-work@codex-must-work-local" not in config.read_bytes()

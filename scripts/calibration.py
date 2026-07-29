@@ -14,8 +14,8 @@ if TYPE_CHECKING:
 from scripts.durations import Milliseconds
 
 MIN_SAMPLE_COUNT: Final = 20
-DEFAULT_WARNING_MS: Final = Milliseconds(10 * 60 * 1000)
-DEFAULT_RESTART_MS: Final = Milliseconds(20 * 60 * 1000)
+DEFAULT_WARNING_MS: Final = Milliseconds(5 * 60 * 1000)
+DEFAULT_RESTART_MS: Final = Milliseconds(10 * 60 * 1000)
 
 
 @unique

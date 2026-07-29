@@ -4,9 +4,9 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from scripts.app_server_protocol import TurnOutcome
-from scripts.diagnostics import DiagnosticCode
 from scripts.manager_callbacks import ManagerCallbacks
 from scripts.manager_engine import ManagerEngine
+from scripts.monitor_diagnostics import DiagnosticCode
 from scripts.setup import enable_session, request_verified_completion
 from scripts.setup_cli import main
 from scripts.state import StateDocument, load_state, runtime_path, save_state

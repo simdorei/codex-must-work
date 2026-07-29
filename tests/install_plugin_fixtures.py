@@ -5,13 +5,20 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from scripts import install_plugin, installer_observation
+from scripts import install_plugin, installer_prior_observation
 from scripts.cache_types import CacheIdentity, CachePublication
+from scripts.install_receipt import ReceiptCommit
 from scripts.installed_generation import InstalledGeneration
-from scripts.installer_mcp_runtime import McpRuntimePublication
+from scripts.installer_mcp_runtime import (
+    McpRuntimePublication,
+    current_runtime_spec,
+)
+from scripts.private_root import ensure_private_root
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from scripts.installer_lock import InstallerLease
 
 
 @pytest.fixture(autouse=True)
@@ -27,10 +34,14 @@ def isolated_installer_temp(
     monkeypatch.setattr(tempfile, "tempdir", str(root))
 
     def reuse_runtime(_source: Path, data: Path) -> McpRuntimePublication:
+        ensure_private_root(data)
+        runtime = data / f"portable-python-{current_runtime_spec().version}"
+        runtime.mkdir(exist_ok=True)
+        metadata = runtime.stat()
         return McpRuntimePublication(
-            data / "portable-python-test",
-            CacheIdentity(0, 0),
-            created_by_run=False,
+            runtime,
+            CacheIdentity(metadata.st_dev, metadata.st_ino),
+            created_by_run=True,
         )
 
     monkeypatch.setattr(install_plugin, "prepare_mcp_runtime", reuse_runtime, raising=False)
@@ -45,9 +56,11 @@ def isolated_installer_temp(
         return publication.identity, publication.digest
 
     monkeypatch.setattr(install_plugin, "validate_cache_publication", validate, raising=False)
-    monkeypatch.setattr(installer_observation, "validate_cache_publication", validate)
+    monkeypatch.setattr("scripts.installer_cache_observation.validate_cache_publication", validate)
+    if "real_generation_validation" in request.fixturenames:
+        return
 
-    def configured(prior: installer_observation.PriorState) -> InstalledGeneration | None:
+    def configured(prior: installer_prior_observation.PriorState) -> InstalledGeneration | None:
         source = prior.observation.source_root
         if source is None or not source.exists() or prior.observation.legacy_enabled is True:
             return None
@@ -74,3 +87,28 @@ def isolated_installer_temp(
 @pytest.fixture
 def real_cache_validation() -> None:
     pass
+
+
+@pytest.fixture
+def real_generation_validation() -> None:
+    pass
+
+
+@pytest.fixture
+def synthetic_install_receipt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Opt out only for tests whose deliberately synthetic cache is not a package."""
+
+    def ignore_install_receipt(
+        _lease: InstallerLease,
+        _source: Path,
+        _publication: CachePublication,
+        _runtime: McpRuntimePublication,
+    ) -> ReceiptCommit:
+        return ReceiptCommit(None)
+
+    monkeypatch.setattr(
+        install_plugin,
+        "publish_install_receipt",
+        ignore_install_receipt,
+        raising=False,
+    )

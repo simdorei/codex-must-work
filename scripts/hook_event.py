@@ -16,22 +16,14 @@ from typing import TYPE_CHECKING, assert_never
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts import installed_generation
-from scripts.calibration_scan import scan_history
-from scripts.calibration_state import CalibrationEnvironment, load_or_calibrate
-from scripts.control_capability import derive_control_capability, load_control_key
 from scripts.hook_payload import (
     HookEvent,
     HookPayload,
-    SessionLocator,
     StopContinuation,
     parse_payload,
-    serialize_locator,
     serialize_stop_continuation,
 )
 from scripts.hook_state import apply_hook_event, safe_transcript_path
-from scripts.notification_onboarding import claim_notification_onboarding
-from scripts.path_identity import resolve_local_path
 from scripts.private_root import ensure_private_root
 from scripts.state import (
     CorruptReason,
@@ -48,7 +40,6 @@ if TYPE_CHECKING:
     from scripts.state_io import JsonValue
 
 _launch_watcher = launch_watcher
-_scan_history = scan_history
 
 
 def process_hook(
@@ -57,58 +48,15 @@ def process_hook(
     root: Path | None = None,
     plugin_root: Path | None = None,
     plugin_data: Path | None = None,
-) -> SessionLocator | StopContinuation | None:
+) -> StopContinuation | None:
     """Apply one allowlisted hook payload without retaining body fields."""
+    _ = plugin_root, plugin_data
     payload = parse_payload(raw)
     if payload is None:
         return None
     if payload.event is HookEvent.SESSION_START:
-        return _session_locator(payload, root, plugin_root, plugin_data)
-    return _process_enabled_event(payload, root)
-
-
-def _session_locator(
-    payload: HookPayload,
-    root: Path | None,
-    plugin_root: Path | None,
-    plugin_data: Path | None,
-) -> SessionLocator | None:
-    if payload.transcript_path is None:
         return None
-    if plugin_data is None:
-        message = "PLUGIN_DATA is required for SessionStart"
-        raise RuntimeError(message)
-    active_root = state_root() if root is None else root
-    active_plugin_root = (
-        Path(__file__).resolve().parent.parent if plugin_root is None else plugin_root.resolve()
-    )
-    generation = installed_generation.require_session_generation(
-        active_root.parent, active_plugin_root
-    )
-    calibration = load_or_calibrate(
-        CalibrationEnvironment(
-            state_root=active_root,
-            plugin_root=active_plugin_root,
-            codex_home=active_root.parent,
-            now=datetime.now(UTC),
-        ),
-        _scan_history,
-    )
-    resolved_plugin_data = plugin_data.resolve()
-    return SessionLocator(
-        session_id=payload.session_id,
-        transcript_path=str(resolve_local_path(payload.transcript_path)),
-        plugin_root=str(active_plugin_root),
-        plugin_data=str(resolved_plugin_data),
-        control_capability=derive_control_capability(
-            load_control_key(plugin_data, active_root),
-            payload.session_id,
-        ),
-        permission_mode=payload.permission_mode,
-        calibration=calibration,
-        package_digest_sha256=generation.digest,
-        notification_setup=claim_notification_onboarding(resolved_plugin_data),
-    )
+    return _process_enabled_event(payload, root)
 
 
 def _process_enabled_event(
@@ -184,8 +132,6 @@ def _main() -> int:
         _ = sys.stderr.write(f"invalid hook JSON: {error.msg}\n")
         return 1
     match locator:
-        case SessionLocator():
-            _ = sys.stdout.write(serialize_locator(locator) + "\n")
         case StopContinuation():
             _ = sys.stdout.write(serialize_stop_continuation(locator) + "\n")
         case None:

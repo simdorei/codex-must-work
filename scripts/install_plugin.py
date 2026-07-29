@@ -1,12 +1,9 @@
-"""Install and trust CMW as one fail-closed transaction.
-
-# noqa: SIZE_OK — one cohesive installer transaction with ordered rollback.
-"""
+"""Install and trust CMW as one fail-closed transaction."""
 
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass, replace
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Never
 
@@ -16,7 +13,6 @@ if __package__ in {None, ""}:
 from scripts.codex_compatibility import CompatibilityResult, validate_codex_compatibility
 from scripts.codex_config import ConfigMutation, update_codex_config
 from scripts.config_publication import write_config_bytes
-from scripts.control_capability import ControlKeyError, provision_control_key
 from scripts.hook_trust import (
     TRUSTED_HOOK_COUNT,
     TrustedHookState,
@@ -25,6 +21,7 @@ from scripts.hook_trust import (
 from scripts.install_cache import publish_cache
 from scripts.install_errors import InstallPluginError
 from scripts.install_plugin_cli import run_cli
+from scripts.install_receipt import install_receipt_is_committed, publish_install_receipt
 from scripts.installed_generation import (
     InstalledGeneration,
     configured_generation,
@@ -33,8 +30,8 @@ from scripts.installed_generation import (
     validate_requested_manifest,
 )
 from scripts.installer_cache_validation import validate_cache_publication
+from scripts.installer_control_key import prepare_control_key
 from scripts.installer_data_root import (
-    DataRootPublication,
     bind_created_control_key,
     prepare_data_root,
 )
@@ -45,7 +42,7 @@ from scripts.installer_observation import (
     PriorState,
     cache_matches_observation,
     classify_prior,
-    disable_local_plugin_only,
+    disable_plugin_only,
     observe_config,
 )
 from scripts.installer_preflight import eligible_no_write, prior_publication
@@ -56,19 +53,17 @@ from scripts.installer_recovery import (
     recovery_context,
 )
 from scripts.installer_result import InstallResult, install_success, unobserved_failure
+from scripts.installer_transaction import run_install_transaction
+from scripts.installer_transaction_types import InstallerOperations, TransactionState
+from scripts.marketplace_identity import MARKETPLACE_NAME, PLUGIN_NAME
+from scripts.package_secret_scan import scan_package_candidate
+from scripts.package_snapshot import package_candidate_snapshot
 
 if TYPE_CHECKING:
     from scripts.cache_types import CachePublication
+    from scripts.install_receipt import ReceiptCommit
 
-_MARKETPLACE: Final = "codex-must-work-local"
-
-
-@dataclass(frozen=True, slots=True)
-class _TransactionState:
-    publication: CachePublication | None
-    data_publication: DataRootPublication | None
-    runtime_publication: McpRuntimePublication | None
-    owned_data: bytes
+_MARKETPLACE: Final = MARKETPLACE_NAME
 
 
 def install(codex_home: Path, source_root: Path) -> InstallResult:
@@ -76,9 +71,25 @@ def install(codex_home: Path, source_root: Path) -> InstallResult:
     if not codex_home.is_absolute() or not source_root.is_absolute():
         return unobserved_failure("installer_path_not_absolute")
     try:
+        with package_candidate_snapshot(source_root) as candidate_root:
+            candidate_digest = scan_package_candidate(candidate_root)
+            return _install_candidate(codex_home, candidate_root, candidate_digest, source_root)
+    except InstallPluginError as error:
+        return unobserved_failure(error.reason_code)
+    except OSError:
+        return unobserved_failure("installer_io_failure")
+
+
+def _install_candidate(
+    codex_home: Path,
+    candidate_root: Path,
+    candidate_digest: str,
+    receipt_source_root: Path,
+) -> InstallResult:
+    try:
         with installer_lock(codex_home) as lease:
             try:
-                return _install_locked(lease, source_root)
+                return _install_locked(lease, candidate_root, candidate_digest, receipt_source_root)
             except InstallPluginError as error:
                 return locked_failure(lease, error.reason_code)
             except OSError:
@@ -89,171 +100,97 @@ def install(codex_home: Path, source_root: Path) -> InstallResult:
         return unobserved_failure("installer_io_failure")
 
 
-def _install_locked(  # noqa: C901, PLR0915 - transaction order remains visibly fail-closed.
+def _install_locked(
     lease: InstallerLease,
     source_root: Path,
+    candidate_digest: str,
+    receipt_source_root: Path,
 ) -> InstallResult:
-    baseline = validate_codex_compatibility(lease.home, source_root, require_plugins=False)
-    manifest = validate_requested_manifest(source_root)
-    source_trust = trusted_states(source_root)
-    prior = classify_prior(lease.home, lease)
-    configured = configured_generation(prior)
-    target = lease.home / "plugins" / "cache" / _MARKETPLACE / "codex-must-work" / manifest.version
-    transaction = _TransactionState(
-        publication=None,
-        data_publication=None,
-        runtime_publication=None,
-        owned_data=prior.observation.snapshot.data,
+    def publish_receipt(
+        active_lease: InstallerLease,
+        _candidate_root: Path,
+        publication: CachePublication,
+        runtime: McpRuntimePublication,
+    ) -> ReceiptCommit:
+        return publish_install_receipt(active_lease, receipt_source_root, publication, runtime)
+
+    operations = InstallerOperations(
+        marketplace=_MARKETPLACE,
+        plugin_name=PLUGIN_NAME,
+        validate_compatibility=validate_codex_compatibility,
+        validate_manifest=validate_requested_manifest,
+        trusted_states=trusted_states,
+        classify_prior=classify_prior,
+        configured_generation=configured_generation,
+        scan_candidate=scan_package_candidate,
+        fail=_fail,
+        prepare_data_root=prepare_data_root,
+        prepare_control_key=prepare_control_key,
+        bind_control_key=bind_created_control_key,
+        prepare_runtime=prepare_mcp_runtime,
+        eligible_no_write=eligible_no_write,
+        prior_publication=prior_publication,
+        no_write_reinstall=_no_write_reinstall,
+        publish_receipt=publish_receipt,
+        initial_disabled=initial_disabled_observation,
+        observe_config=observe_config,
+        publish_cache=publish_cache,
+        validate_publication=_validate_publication,
+        requested_generation=requested_generation,
+        select_generation=select_generation,
+        write_config=write_config_bytes,
+        require_final_generation=_require_final_generation,
+        config_mutation=ConfigMutation,
+        publish_state=_publish_state,
+        observe_published=_observe_published_state,
+        cache_matches=cache_matches_observation,
+        install_success=install_success,
+        recovery_state=RecoveryState,
+        recovery_context=recovery_context,
+        recover_install=recover_install,
+        recover_interrupted=partial(
+            _recover_interrupted_install,
+            receipt_source_root=receipt_source_root,
+        ),
     )
-    try:
-        data_publication = prepare_data_root(lease.home)
-        transaction = replace(transaction, data_publication=data_publication)
-        control_key = _prepare_control_key(lease, data_publication)
-        data_publication = bind_created_control_key(data_publication, control_key)
-        transaction = replace(transaction, data_publication=data_publication)
-        runtime_publication = prepare_mcp_runtime(
-            source_root,
-            data_publication.path,
-        )
-        transaction = replace(
-            transaction,
-            runtime_publication=runtime_publication,
-        )
-        if eligible_no_write(prior, target, source_trust):
-            publication = prior_publication(prior)
-            transaction = replace(transaction, publication=publication)
-            return _no_write_reinstall(
-                lease,
-                source_root,
-                baseline,
-                prior,
-                publication,
-            )
-        disabled = initial_disabled_observation(lease, prior)
-        transaction = replace(transaction, owned_data=disabled.snapshot.data)
-        if not disabled.plugin_disabled:
-            _fail("plugin_disable_verification_failed")
-        fenced = observe_config(lease.home, lease)
-        if not fenced.plugin_disabled or fenced.snapshot.state != disabled.snapshot.state:
-            _fail("codex_config_concurrent_change")
-        publication = publish_cache(source_root, lease.home, manifest.version)
-        transaction = replace(transaction, owned_data=fenced.snapshot.data, publication=publication)
-        _validate_publication(publication, source_root)
-        requested = requested_generation(publication)
-        selected = select_generation(configured, requested)
-        if selected is configured:
-            current = configured_generation(prior)
-            if current != selected:
-                _fail("installed_generation_revalidation_failed")
-            _ = write_config_bytes(
-                lease,
-                fenced.snapshot,
-                prior.observation.snapshot.data,
-            )
-            _ = validate_codex_compatibility(
-                lease.home,
-                source_root,
-                require_plugins=True,
-                expected=baseline,
-            )
-            _require_final_generation(lease, selected)
-            return install_success()
-        final_trust = trusted_states(publication.cache_path)
-        mutation = ConfigMutation(
-            publication.cache_path,
-            final_trust,
-            plugin_enabled=False,
-            disable_legacy=False,
-        )
-        owned_data = _publish_state(
+    return run_install_transaction(lease, source_root, candidate_digest, operations)
+
+
+def _recover_interrupted_install(
+    lease: InstallerLease,
+    source_root: Path,
+    prior: PriorState,
+    transaction: TransactionState,
+    *,
+    receipt_source_root: Path,
+) -> None:
+    publication = transaction.publication
+    runtime = transaction.runtime_publication
+    if (
+        publication is not None
+        and runtime is not None
+        and install_receipt_is_committed(
             lease,
-            mutation,
+            receipt_source_root,
+            publication,
+            runtime,
         )
-        transaction = replace(transaction, owned_data=owned_data)
-        disabled = _observe_published_state(lease, mutation)
-        if not disabled.plugin_disabled:
-            _fail("plugin_disable_verification_failed")
-        _ = validate_codex_compatibility(
-            lease.home,
-            source_root,
-            require_plugins=True,
-            expected=baseline,
-        )
-        _validate_publication(publication, source_root)
-        mutation = ConfigMutation(
-            publication.cache_path,
-            final_trust,
-            plugin_enabled=True,
-            disable_legacy=False,
-        )
-        owned_data = _publish_state(
-            lease,
-            mutation,
-        )
-        transaction = replace(transaction, owned_data=owned_data)
-        enabled = _observe_published_state(lease, mutation)
-        if enabled.plugin_disabled or not cache_matches_observation(
-            enabled, publication, final_trust, source_root
-        ):
-            _fail("enabled_trust_verification_failed")
-        _ = validate_codex_compatibility(
-            lease.home,
-            source_root,
-            require_plugins=True,
-            expected=baseline,
-        )
-        checked = observe_config(lease.home, lease)
-        if checked.snapshot.state != enabled.snapshot.state:
-            _fail("codex_config_concurrent_change")
-        _validate_publication(publication, source_root)
-        mutation = ConfigMutation(
-            publication.cache_path,
-            final_trust,
-            plugin_enabled=True,
-            disable_legacy=True,
-        )
-        owned_data = _publish_state(
-            lease,
-            mutation,
-        )
-        transaction = replace(transaction, owned_data=owned_data)
-        final = _observe_published_state(lease, mutation)
-        if final.legacy_enabled is True or not cache_matches_observation(
-            final, publication, final_trust, source_root
-        ):
-            _fail("final_install_verification_failed")
-        _require_final_generation(lease, requested)
-        return install_success()
-    except InstallPluginError as error:
-        return recover_install(
-            lease,
-            recovery_context(
-                prior,
-                RecoveryState(
-                    publication=transaction.publication,
-                    data_publication=transaction.data_publication,
-                    runtime_publication=transaction.runtime_publication,
-                    source_root=source_root,
-                    owned_data=transaction.owned_data,
-                ),
-                error.reason_code,
+    ):
+        return
+    _ = recover_install(
+        lease,
+        recovery_context(
+            prior,
+            RecoveryState(
+                publication=publication,
+                data_publication=transaction.data_publication,
+                runtime_publication=runtime,
+                source_root=source_root,
+                owned_data=transaction.owned_data,
             ),
-        )
-    except OSError:
-        return recover_install(
-            lease,
-            recovery_context(
-                prior,
-                RecoveryState(
-                    publication=transaction.publication,
-                    data_publication=transaction.data_publication,
-                    runtime_publication=transaction.runtime_publication,
-                    source_root=source_root,
-                    owned_data=transaction.owned_data,
-                ),
-                "installer_io_failure",
-            ),
-        )
+            "install_interrupted_before_receipt_commit",
+        ),
+    )
 
 
 def initial_disabled_observation(lease: InstallerLease, prior: PriorState) -> ConfigObservation:
@@ -263,7 +200,7 @@ def initial_disabled_observation(lease: InstallerLease, prior: PriorState) -> Co
         if disabled.snapshot.state != prior.observation.snapshot.state:
             _fail("codex_config_concurrent_change")
         return disabled
-    return disable_local_plugin_only(lease.home, lease)
+    return disable_plugin_only(lease.home, lease)
 
 
 def _no_write_reinstall(
@@ -321,19 +258,6 @@ def _observe_published_state(
     ):
         _fail("codex_config_publication_failed")
     return observed
-
-
-def _prepare_control_key(
-    lease: InstallerLease,
-    publication: DataRootPublication,
-) -> bytes:
-    try:
-        return provision_control_key(
-            publication.path,
-            lease.home / "codex-must-work",
-        )
-    except ControlKeyError as error:
-        _fail(error.reason_code)
 
 
 def _validate_publication(publication: CachePublication, source_root: Path) -> None:

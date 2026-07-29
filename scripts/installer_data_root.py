@@ -12,13 +12,14 @@ from typing import TYPE_CHECKING, Final, Never
 from scripts.cache_security import require_directory
 from scripts.install_errors import InstallPluginError
 from scripts.installer_lock import FileIdentity, file_identity
+from scripts.marketplace_identity import DATA_ROOT_NAME
 from scripts.private_root import PrivateRootError, ensure_private_root
 from scripts.state_io import open_direct_file
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-_DATA_NAME: Final = "codex-must-work-codex-must-work-local"
+_DATA_NAME: Final = DATA_ROOT_NAME
 _MARKER: Final = ".private-root-v1"
 _MARKER_BYTES: Final = b"private-root-v1\n"
 _INVALID: Final = "plugin_data_root_invalid"

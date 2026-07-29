@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import tempfile
 import tomllib
@@ -8,17 +9,31 @@ from pathlib import Path
 import pytest
 
 from scripts.codex_config import ConfigMutation, update_codex_config
-from scripts.hook_trust import TrustedHookState
+from scripts.hook_trust import (
+    HookPlatform,
+    TrustedHookState,
+    trusted_hook_states_for_plugin,
+)
 from scripts.install_errors import InstallPluginError
 
-PREFIX = "codex-must-work@codex-must-work-local:hooks/hooks.json"
-EVENTS = ("session_start",)
+PREFIX = "codex-must-work@simdorei:hooks/hooks.json"
+EVENTS = ("user_prompt_submit",)
+SOURCE_ROOT = Path(__file__).parents[1]
+PLATFORM = HookPlatform.WINDOWS if os.name == "nt" else HookPlatform.POSIX
+HASHES = {
+    HookPlatform.WINDOWS: (
+        "sha256:46351e07d2a3f20f5ba0f9733b3bfbd18ee9c9821789249e8596316b14d0e30a",
+    ),
+    HookPlatform.POSIX: (
+        "sha256:2ffaeb663ac780875b3e5c023ffd457beda4e73274b932518944cce7aef08345",
+    ),
+}
 
 
 def _hooks() -> tuple[TrustedHookState, ...]:
     return tuple(
-        TrustedHookState(f"{PREFIX}:{event}:0:0", f"sha256:{index:064x}")
-        for index, event in enumerate(EVENTS)
+        TrustedHookState(f"{PREFIX}:{event}:0:0", trusted_hash)
+        for event, trusted_hash in zip(EVENTS, HASHES[PLATFORM], strict=True)
     )
 
 
@@ -54,6 +69,10 @@ def _reject(home: Path, mutation: ConfigMutation, raw: bytes, reason: str) -> No
     assert path.read_bytes() == raw
 
 
+def test_fixture_matches_production_prompt_hook_trust() -> None:
+    assert _hooks() == trusted_hook_states_for_plugin(SOURCE_ROOT, "simdorei", PLATFORM)
+
+
 PRESERVE_CASES = [
     (None, b"hide_full_access_warning = true", True),
     (b"", b"", False),
@@ -61,7 +80,7 @@ PRESERVE_CASES = [
     (b"[notice]\nhide_world_writable_warning = true\n", b"[notice]\n", True),
     (b"[notice]\nhide_world_writable_warning = false # choice\n", b"false # choice", True),
     (b"[notice]\n# kept\nhide_full_access_warning = false\n\n", b"# kept\n", True),
-    (b'[marketplaces.simdorei]\nsource = "keep"\n', b'source = "keep"', False),
+    (b'[marketplaces.other]\nsource = "keep"\n', b'source = "keep"', False),
     (b"[features]\nplugin_hooks = false # inert\n", b"plugin_hooks = false # inert", False),
     (b"[arbitrary]\r\nvalue = 1\r\n\r\n\r\n", b"[arbitrary]\r\n", False),
 ]
@@ -100,12 +119,12 @@ def test_crlf_edit_removes_only_stale_owned_hook(
     home: Path, mutation: ConfigMutation, enabled: bool
 ) -> None:
     stale = f"{PREFIX}:obsolete:9:9"
-    similar = "codex-must-work@codex-must-work-locality:hooks/hooks.json:stop:0:0"
+    similar = "codex-must-work@simdoreity:hooks/hooks.json:stop:0:0"
     raw = (
         "[features]\r\nplugins   = false   # keep\r\nplugin_hooks = false # inert\r\n"
         f'[hooks.state."{stale}"]\r\nenabled = true\r\ntrusted_hash = "sha256:stale"\r\n'
         f'[hooks.state."{similar}"]\r\nenabled = true\r\ntrusted_hash = "sha256:similar"\r\n'
-        '[plugins."codex-must-work@simdorei"]\r\nenabled = true # legacy\r\n'
+        '[plugins."codex-must-work@codex-must-work-local"]\r\nenabled = true # legacy\r\n'
     ).encode()
     changed = ConfigMutation(mutation.source_root, mutation.trusted_hooks, enabled)
     updated = _apply(home, changed, raw)
@@ -117,7 +136,7 @@ def test_crlf_edit_removes_only_stale_owned_hook(
     }
     assert b"\n" not in updated.replace(b"\r\n", b"")
     assert b"plugins   = true   # keep" in updated
-    assert b"enabled = false # legacy" in updated
+    assert b"codex-must-work@codex-must-work-local" not in updated
     assert stale.encode() not in updated
     assert similar.encode() in updated
     assert owned == {hook.key.encode() for hook in _hooks()}
@@ -130,7 +149,7 @@ def test_upgrade_replaces_old_cmw_turn_hooks_without_touching_other_plugin(
     # Given
     lazy_key = "lazy-plugin@local:hooks/hooks.json:user_prompt_submit:0:0"
     old_keys = (
-        f"{PREFIX}:user_prompt_submit:0:0",
+        f"{PREFIX}:pre_tool_use:0:0",
         f"{PREFIX}:stop:0:0",
     )
     raw = (
@@ -146,7 +165,7 @@ def test_upgrade_replaces_old_cmw_turn_hooks_without_touching_other_plugin(
 
     # Then
     assert all(key.encode() not in updated for key in old_keys)
-    assert mutation.trusted_hooks[0].key.encode() in updated
+    assert all(hook.key.encode() in updated for hook in mutation.trusted_hooks)
     assert lazy_key.encode() in updated
     assert b'trusted_hash = "sha256:old"' in updated
 
@@ -170,10 +189,10 @@ UNSUPPORTED = [
     b'["features"]\nplugins = false\n',
     b"[[features]]\nplugins = false\n",
     b'[features]\nplugins = """false"""\n',
-    b'marketplaces.codex-must-work-local.source_type = "local"\n',
-    b'marketplaces = { codex-must-work-local = { source_type = "local" } }\n',
-    b'[marketplaces."codex-must-work-local"]\nsource_type = "local"\n',
-    b'[plugins."codex-must-work@codex-must-work-local"]\nenabled = [true]\n',
+    b'marketplaces.simdorei.source_type = "git"\n',
+    b'marketplaces = { simdorei = { source_type = "git" } }\n',
+    b'[marketplaces."simdorei"]\nsource_type = "git"\n',
+    b'[plugins."codex-must-work@simdorei"]\nenabled = [true]\n',
     f'[hooks.state."{PREFIX}:event_0:0:0"]\ntrusted_hash = """x"""\n'.encode(),
 ]
 MALFORMED = [
@@ -197,13 +216,35 @@ def test_rejects_ambiguous_or_malformed_toml(
 
 INVALID_HOOKS = [
     _hooks()[:-1],
+    _hooks()[1:],
     (*_hooks(), _hooks()[0]),
+    (
+        _hooks()[0],
+        TrustedHookState(
+            f"{PREFIX}:user_prompt_submit:1:0",
+            _hooks()[0].trusted_hash,
+        ),
+    ),
+    (
+        _hooks()[0],
+        TrustedHookState(_hooks()[0].key, "bad"),
+    ),
     (TrustedHookState("other:0", f"sha256:{0:064x}"),),
-    (TrustedHookState(f"{PREFIX}:event_0:0:0", "bad"),),
 ]
 
 
-@pytest.mark.parametrize("trusted_hooks", INVALID_HOOKS)
+@pytest.mark.parametrize(
+    "trusted_hooks",
+    INVALID_HOOKS,
+    ids=(
+        "missing-user-prompt-submit",
+        "missing-session-start",
+        "duplicate-session-start",
+        "wrong-user-prompt-submit-index",
+        "invalid-user-prompt-submit-hash",
+        "unowned-hook",
+    ),
+)
 def test_rejects_non_exact_trust(
     home: Path, mutation: ConfigMutation, trusted_hooks: tuple[TrustedHookState, ...]
 ) -> None:
@@ -227,3 +268,30 @@ def test_public_pipeline_is_idempotent(home: Path, mutation: ConfigMutation) -> 
     first = update_codex_config(home, mutation)
     assert update_codex_config(home, mutation) == first
     assert (home / "config.toml").read_bytes() == first
+
+
+def test_publishes_git_simdorei_and_removes_local_migration_state(
+    home: Path,
+    mutation: ConfigMutation,
+) -> None:
+    legacy_hook = "codex-must-work@codex-must-work-local:hooks/hooks.json:session_start:0:0"
+    raw = (
+        "[marketplaces.codex-must-work-local]\n"
+        'source_type = "local"\nsource = "C:/stale"\n'
+        '[plugins."codex-must-work@codex-must-work-local"]\n'
+        "enabled = true\n"
+        f'[hooks.state."{legacy_hook}"]\n'
+        'enabled = true\ntrusted_hash = "sha256:stale"\n'
+    ).encode()
+
+    updated = tomllib.loads(_apply(home, mutation, raw).decode())
+
+    assert updated["marketplaces"]["simdorei"] == {
+        "source_type": "git",
+        "source": "https://github.com/simdorei/codex-must-work.git",
+        "ref": "main",
+    }
+    assert updated["plugins"]["codex-must-work@simdorei"] == {"enabled": True}
+    assert "codex-must-work-local" not in updated["marketplaces"]
+    assert "codex-must-work@codex-must-work-local" not in updated["plugins"]
+    assert legacy_hook not in updated["hooks"]["state"]

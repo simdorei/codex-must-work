@@ -38,33 +38,6 @@ class _WaitOptions(TypedDict):
     timeout: float
 
 
-def test_progress_observation_excludes_notification_content() -> None:
-    # Given
-    stream = AppServerActivityStream()
-    message: JsonObject = {
-        "method": "item/agentMessage/delta",
-        "params": {
-            "threadId": "thread-1",
-            "turnId": "turn-1",
-            "delta": "private model output",
-            "item": {"arguments": "private tool input"},
-        },
-    }
-
-    # When
-    stream.record(message)
-
-    # Then
-    observation = stream.wait_activity(INITIAL_ACTIVITY_SEQUENCE, 0.0)
-    assert observation is not None
-    assert observation.activity == AppServerActivity(
-        AppServerActivityKind.TURN_PROGRESS,
-        thread_id="thread-1",
-        turn_id="turn-1",
-    )
-    assert "private" not in repr(observation)
-
-
 def test_threadless_known_turn_is_classified_with_correlated_thread() -> None:
     # Given
     stream = AppServerActivityStream()
@@ -86,28 +59,6 @@ def test_threadless_known_turn_is_classified_with_correlated_thread() -> None:
         thread_id="thread-1",
         turn_id="turn-1",
     )
-
-
-def test_response_does_not_emit_progress() -> None:
-    # Given
-    stream = AppServerActivityStream()
-
-    # When
-    stream.record({"id": "request-1", "result": {"private": "value"}})
-
-    # Then
-    assert stream.wait_activity(INITIAL_ACTIVITY_SEQUENCE, 0.0) is None
-
-
-def test_unrelated_notification_does_not_emit_progress() -> None:
-    # Given
-    stream = AppServerActivityStream()
-
-    # When
-    stream.record({"method": "account/updated", "params": {"private": "value"}})
-
-    # Then
-    assert stream.wait_activity(INITIAL_ACTIVITY_SEQUENCE, 0.0) is None
 
 
 def test_server_request_emits_only_ownership_metadata() -> None:

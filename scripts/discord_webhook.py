@@ -21,6 +21,8 @@ _WEBHOOK_PATH = re.compile(r"/api/webhooks/[1-9][0-9]{5,24}/[^/?#]{6,256}\Z")
 _HTTP_PORT: Final = 443
 _HTTP_TIMEOUT_SECONDS: Final = 5.0
 _MAX_RESPONSE_BYTES: Final = 65_536
+_MAX_CONTENT_CHARS: Final = 2_000
+_CONTENT_TOO_LARGE: Final = "discord_content_too_large"
 _REQUEST_FAILED: Final = "discord_request_failed"
 _RESPONSE_TOO_LARGE: Final = "discord_response_too_large"
 _RESPONSE_INVALID: Final = "discord_response_invalid"
@@ -115,6 +117,8 @@ class DiscordWebhookClient:
 
     def send(self, content: str) -> str | None:
         """Send one mention-disabled payload and return its acknowledged id."""
+        if len(content) > _MAX_CONTENT_CHARS:
+            raise DiscordWebhookError(_CONTENT_TOO_LARGE)
         body = json.dumps(
             {"allowed_mentions": {"parse": []}, "content": content},
             ensure_ascii=False,

@@ -13,13 +13,7 @@ if TYPE_CHECKING:
 from scripts.durations import Milliseconds
 from scripts.state_io import StateLockTimeoutError
 from scripts.threshold_settings import ThresholdSettingsSnapshot, ThresholdSettingsStore
-from tests.mcp_server_test_support import (
-    FakeDaemon,
-    capability,
-    ready_server,
-    request,
-    success_result,
-)
+from tests.mcp_server_test_support import FakeDaemon, ready_server, request, success_result
 
 
 def test_settings_show_returns_five_and_ten_minute_defaults(tmp_path: Path) -> None:
@@ -28,7 +22,6 @@ def test_settings_show_returns_five_and_ten_minute_defaults(tmp_path: Path) -> N
     server = ready_server(daemon, threshold_settings=store)
     arguments: dict[str, JsonValue] = {
         "session_id": "settings-session",
-        "control_capability": capability("settings-session"),
         "action": "show",
     }
 
@@ -51,7 +44,6 @@ def test_settings_custom_persists_exact_thresholds(tmp_path: Path) -> None:
     server = ready_server(daemon, threshold_settings=ThresholdSettingsStore(root))
     arguments: dict[str, JsonValue] = {
         "session_id": "settings-session",
-        "control_capability": capability("settings-session"),
         "action": "custom",
         "warning_after_ms": 420_000,
         "critical_after_ms": 900_000,
@@ -82,7 +74,6 @@ def test_settings_recommended_uses_local_history_values(tmp_path: Path) -> None:
     server = ready_server(daemon, threshold_settings=store)
     arguments: dict[str, JsonValue] = {
         "session_id": "settings-session",
-        "control_capability": capability("settings-session"),
         "action": "recommended",
     }
 
@@ -107,7 +98,6 @@ def test_settings_custom_requires_both_ordered_thresholds(tmp_path: Path) -> Non
     )
     arguments: dict[str, JsonValue] = {
         "session_id": "settings-session",
-        "control_capability": capability("settings-session"),
         "action": "custom",
         "warning_after_ms": 600_000,
         "critical_after_ms": 300_000,
@@ -136,7 +126,6 @@ def test_settings_state_failure_returns_stable_error_without_local_path(
     server = ready_server(FakeDaemon(), threshold_settings=store)
     arguments: dict[str, JsonValue] = {
         "session_id": "settings-session",
-        "control_capability": capability("settings-session"),
         "action": "show",
     }
 

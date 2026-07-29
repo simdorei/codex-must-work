@@ -110,7 +110,7 @@ def test_unselected_runtime_with_disabled_hooks_fails_closed(
             [
                 {
                     "name": "codex-must-work",
-                    "marketplace": "codex-must-work-local",
+                    "marketplace": "simdorei",
                     "source": {"source": "local", "path": "./"},
                 }
             ]

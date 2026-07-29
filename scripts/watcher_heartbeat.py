@@ -6,13 +6,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from scripts.diagnostics import DiagnosticCode, MonitorState
-from scripts.silence import latest_progress_at
+from scripts.monitor_diagnostics import DiagnosticCode, MonitorState
+from scripts.stall_detector import latest_progress_at
 from scripts.watcher_diagnostics import TargetDiagnostic, append_target_diagnostic
 
 if TYPE_CHECKING:
-    from scripts.silence import SilenceState
-    from scripts.watcher_models import RuntimeTarget
+    from scripts.monitor_target import RuntimeTarget
+    from scripts.stall_detector import SilenceState
 
 type DetectorKey = tuple[str, str | None, int]
 type HeartbeatContext = tuple[Path, dict[str, float], float, datetime]

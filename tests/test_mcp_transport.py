@@ -4,13 +4,16 @@ import os
 import queue
 import threading
 from io import StringIO
+from pathlib import Path
 from typing import final
 
 import pytest
 
-from scripts.daemon_models import SessionId, SessionRequest, StartRequest, ToolResult
 from scripts.mcp_protocol import StdioStreams
 from scripts.mcp_server import run_server
+from scripts.monitor_models import SessionId, SessionRequest, StartRequest, ToolResult
+from scripts.private_root import ensure_private_root
+from scripts.work_on_activation import ActivationTicketStore
 
 
 @final
@@ -47,7 +50,16 @@ def _test_key() -> bytes:
     return hashlib.sha256(b"cmw-public-test-key").digest()
 
 
-def test_run_server_keeps_notifications_off_stdout() -> None:
+@pytest.fixture
+def activation_tickets(tmp_path: Path) -> ActivationTicketStore:
+    plugin_data = tmp_path / "plugin-data"
+    ensure_private_root(plugin_data)
+    return ActivationTicketStore(plugin_data, _test_key())
+
+
+def test_run_server_keeps_notifications_off_stdout(
+    activation_tickets: ActivationTicketStore,
+) -> None:
     # Given
     stdin = StringIO(
         "\n".join(
@@ -63,7 +75,12 @@ def test_run_server_keeps_notifications_off_stdout() -> None:
     stderr = StringIO()
 
     # When
-    run_server(_TransportDaemon(), StdioStreams(stdin, stdout, stderr), _test_key())
+    run_server(
+        _TransportDaemon(),
+        StdioStreams(stdin, stdout, stderr),
+        _test_key(),
+        activation_tickets=activation_tickets,
+    )
 
     # Then
     messages = stdout.getvalue().splitlines()
@@ -73,7 +90,9 @@ def test_run_server_keeps_notifications_off_stdout() -> None:
     assert stderr.getvalue() == ""
 
 
-def test_run_server_discards_streaming_overlimit_and_continues() -> None:
+def test_run_server_discards_streaming_overlimit_and_continues(
+    activation_tickets: ActivationTicketStore,
+) -> None:
     # Given
     oversized = "{" + "x" * 1_048_576 + "}"
     stdin = StringIO(
@@ -89,7 +108,12 @@ def test_run_server_discards_streaming_overlimit_and_continues() -> None:
     stdout = StringIO()
 
     # When
-    run_server(_TransportDaemon(), StdioStreams(stdin, stdout, StringIO()), _test_key())
+    run_server(
+        _TransportDaemon(),
+        StdioStreams(stdin, stdout, StringIO()),
+        _test_key(),
+        activation_tickets=activation_tickets,
+    )
 
     # Then
     messages = stdout.getvalue().splitlines()
@@ -100,7 +124,9 @@ def test_run_server_discards_streaming_overlimit_and_continues() -> None:
     assert '"id":2' in messages[2]
 
 
-def test_run_server_replies_to_pipe_initialize_before_eof() -> None:
+def test_run_server_replies_to_pipe_initialize_before_eof(
+    activation_tickets: ActivationTicketStore,
+) -> None:
     # Given
     stdin_read_descriptor, stdin_write_descriptor = os.pipe()
     stdout_read_descriptor, stdout_write_descriptor = os.pipe()
@@ -113,6 +139,7 @@ def test_run_server_replies_to_pipe_initialize_before_eof() -> None:
     server_worker = threading.Thread(
         target=run_server,
         args=(_TransportDaemon(), StdioStreams(stdin, server, StringIO()), _test_key()),
+        kwargs={"activation_tickets": activation_tickets},
         daemon=True,
     )
     response_worker = threading.Thread(

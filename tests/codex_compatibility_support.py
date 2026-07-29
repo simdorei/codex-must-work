@@ -49,7 +49,7 @@ def source_fixture(tmp_path: Path) -> Path:
     _ = (source / ".agents" / "plugins" / "marketplace.json").write_text(
         json.dumps(
             {
-                "name": "codex-must-work-local",
+                "name": "simdorei",
                 "plugins": [
                     {"name": "codex-must-work", "source": {"source": "local", "path": "./"}}
                 ],
@@ -86,7 +86,7 @@ def fake_commands(
             "--available",
             "--json",
             "--marketplace",
-            "codex-must-work-local",
+            "simdorei",
         )
         assert cwd is None
         temporary_home = Path(env["CODEX_HOME"])
@@ -103,12 +103,12 @@ def fake_commands(
                     "installed": [],
                     "available": [
                         {
-                            "pluginId": "codex-must-work@codex-must-work-local",
+                            "pluginId": "codex-must-work@simdorei",
                             "name": "codex-must-work",
-                            "marketplaceName": "codex-must-work-local",
+                            "marketplaceName": "simdorei",
                             "source": {
                                 "source": "local",
-                                "path": parsed["marketplaces"]["codex-must-work-local"]["source"],
+                                "path": parsed["marketplaces"]["simdorei"]["source"],
                             },
                         }
                     ],

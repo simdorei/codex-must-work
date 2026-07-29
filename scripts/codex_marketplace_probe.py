@@ -10,6 +10,7 @@ from typing import Final, Never, Protocol
 
 from scripts.codex_compatibility_types import MarketplaceSnapshot
 from scripts.install_errors import InstallPluginError
+from scripts.marketplace_identity import MARKETPLACE_NAME, PLUGIN_NAME
 
 type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
 
@@ -35,8 +36,8 @@ def _json_loader() -> _JsonLoader:
 
 
 _LOAD_JSON: Final = _json_loader()
-_MARKETPLACE: Final = "codex-must-work-local"
-_PLUGIN: Final = "codex-must-work"
+_MARKETPLACE: Final = MARKETPLACE_NAME
+_PLUGIN: Final = PLUGIN_NAME
 _UNSUPPORTED: Final = "unsupported_codex_marketplace_root"
 
 

@@ -79,10 +79,10 @@ _DELTAS = frozenset(
         "sub_agent_activity",
     }
 )
+# Native Goal state belongs to the app server and is intentionally not observable task progress.
 _OTHER_PROGRESS = frozenset(
     {
         "context_compacted",
-        "thread_goal_updated",
         "thread_rolled_back",
     }
 )

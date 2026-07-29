@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def test_parent_can_restart_after_temporarily_suppressing_child_finishes(tmp_path: Path) -> None:
+def test_parent_never_requests_restart_after_child_finishes(tmp_path: Path) -> None:
     root, rollout, path = state(tmp_path, children=1, parent=True)
     values = dict(load_state(root, path).values)
     values.update(
@@ -40,11 +40,10 @@ def test_parent_can_restart_after_temporarily_suppressing_child_finishes(tmp_pat
     assert engine.tick(604.0, WALL_TIME) is True
 
     request = load_state(root, path).values["restart_request"]
-    assert isinstance(request, dict)
-    assert request["target_id"] is None
+    assert request is None
 
 
-def test_cancelled_whole_turn_restart_rearms_after_child_activity(tmp_path: Path) -> None:
+def test_child_activity_never_rearms_a_restart_request(tmp_path: Path) -> None:
     root, path = manager_runtime_fixture(tmp_path)
     client = FakeAppServer()
     manager = ManagerEngine(
@@ -60,7 +59,7 @@ def test_cancelled_whole_turn_restart_rearms_after_child_activity(tmp_path: Path
     assert watcher.tick(0.0, WALL_TIME) is True
     assert watcher.tick(91.0, WALL_TIME) is True
     assert watcher.tick(301.0, WALL_TIME) is True
-    assert load_state(root, path).values["restart_request"] is not None
+    assert load_state(root, path).values["restart_request"] is None
 
     _ = process_hook(
         json.dumps(
@@ -90,6 +89,5 @@ def test_cancelled_whole_turn_restart_rearms_after_child_activity(tmp_path: Path
     assert watcher.tick(605.0, WALL_TIME) is True
 
     request = load_state(root, path).values["restart_request"]
-    assert isinstance(request, dict)
-    assert request["turn_id"] == "turn-1"
+    assert request is None
     assert "turn/interrupt" not in client.calls

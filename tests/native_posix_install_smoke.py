@@ -82,7 +82,7 @@ def run_smoke(source_root: Path, checks: Checks) -> int:
         _unsafe_runtime_case(layout, RuntimeKind.HARDLINK, checks)
         home = create_home(layout, "happy-home")
         cache = first_install(layout, home, checks)
-        data = home / "plugins" / "data" / "codex-must-work-codex-must-work-local"
+        data = home / "plugins" / "data" / "codex-must-work-simdorei"
         validate_runtime_and_mcp(
             RuntimeInspection(source_root, cache, data, target),
             checks,

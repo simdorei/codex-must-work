@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
 
-_EVENTS: Final = ("SessionStart",)
+_EVENTS: Final = ("SessionStart", "UserPromptSubmit")
 _SESSION_ID: Final = "native-smoke-session"
 _AUDIT_SITE: Final = """import os
 from pathlib import Path
@@ -68,7 +68,7 @@ def extract_bundled_runtime(
     layout, home, cache = installed.layout, installed.home, installed.cache
     runtime_version, target_name = _runtime_details(layout, target, checks)
     python_version = runtime_version.split("+", maxsplit=1)[0]
-    data = home / "plugins" / "data" / "codex-must-work-codex-must-work-local"
+    data = home / "plugins" / "data" / "codex-must-work-simdorei"
     env = layout.environment(home)
     env["PLUGIN_DATA"] = str(data)
     result = subprocess.run(  # noqa: S603

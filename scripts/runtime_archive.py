@@ -7,12 +7,16 @@ import posixpath
 import tarfile
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Final, Never
+from typing import TYPE_CHECKING, Final, Never
 
 from scripts.install_errors import InstallPluginError
 
+if TYPE_CHECKING:
+    from typing import IO
+
 _INVALID: Final = "portable_runtime_invalid"
 _MINIMUM_ARCHIVE_PARTS: Final = 2
+_READ_CHUNK_BYTES: Final = 64 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,22 +46,60 @@ def validated_archive_members(
             included.append((relative, member))
             continue
         exclusion = expected.get(relative.as_posix())
-        if exclusion is None or not member.isfile():
+        if (
+            exclusion is None
+            or not member.isfile()
+            or member.size != exclusion.size
+            or bool(member.mode & 0o111) != exclusion.executable
+        ):
             _fail()
         extracted = bundle.extractfile(member)
         if extracted is None:
             _fail()
-        data = extracted.read()
-        if (
-            len(data) != exclusion.size
-            or hashlib.sha256(data).hexdigest() != exclusion.sha256
-            or bool(member.mode & 0o111) != exclusion.executable
-        ):
+        with extracted:
+            digest = _exact_digest(extracted, exclusion.size)
+        if digest != exclusion.sha256:
             _fail()
         observed.add(exclusion.path)
     if observed != set(expected):
         _fail()
     return tuple(included)
+
+
+def _exact_digest(source: IO[bytes], expected_size: int) -> str:
+    """Hash exactly the pinned byte count without an unbounded read."""
+    digest = hashlib.sha256()
+    remaining = expected_size
+    while remaining:
+        chunk = source.read(min(_READ_CHUNK_BYTES, remaining))
+        if not chunk:
+            _fail()
+        digest.update(chunk)
+        remaining -= len(chunk)
+    if source.read(1):
+        _fail()
+    return digest.hexdigest()
+
+
+def copy_exact_member(
+    source: IO[bytes],
+    destination: IO[bytes],
+    expected_size: int,
+) -> str:
+    """Copy and hash exactly one manifest-pinned member with bounded memory."""
+    digest = hashlib.sha256()
+    remaining = expected_size
+    while remaining:
+        chunk = source.read(min(_READ_CHUNK_BYTES, remaining))
+        if not chunk:
+            _fail()
+        if destination.write(chunk) != len(chunk):
+            _fail()
+        digest.update(chunk)
+        remaining -= len(chunk)
+    if source.read(1):
+        _fail()
+    return digest.hexdigest()
 
 
 def resolved_member(

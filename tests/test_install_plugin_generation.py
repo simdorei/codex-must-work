@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 from typing import TYPE_CHECKING
 
-from scripts import cache_publication, install_plugin, installer_observation
+from scripts import (
+    cache_publication,
+    install_plugin,
+    installer_observation_config,
+    installer_prior_observation,
+)
 from scripts.cache_types import CacheIdentity
 from scripts.codex_config import update_codex_config as real_update_codex_config
 from scripts.install_errors import InstallPluginError
@@ -65,37 +71,35 @@ def _allow_install(
         metadata = path.stat()
         return identity == CacheIdentity(metadata.st_dev, metadata.st_ino) and digest == "a" * 64
 
-    monkeypatch.setattr(installer_observation, "snapshot_retained_cache", snapshot)
-    monkeypatch.setattr(installer_observation, "retained_cache_matches", retained)
+    monkeypatch.setattr(installer_prior_observation, "snapshot_retained_cache", snapshot)
+    monkeypatch.setattr(installer_prior_observation, "retained_cache_matches", retained)
 
     def trust(path: Path, _marketplace: str) -> tuple[TrustedHookState, ...]:
         return trusted_states(path)
 
-    monkeypatch.setattr(installer_observation, "trusted_hook_states_for_plugin", trust)
+    monkeypatch.setattr(installer_prior_observation, "trusted_hook_states_for_plugin", trust)
     return compatibility
 
 
 def _enabled_prior_config(source: Path) -> bytes:
     raw = unsafe_prior_config(source, "zero")
-    state = trusted_states(source)[0]
-    return (
-        raw
-        + (
-            f'\n[hooks.state."{state.key}"]\n'
-            "enabled = true\n"
-            f'trusted_hash = "{state.trusted_hash}"\n'
-        ).encode()
+    hooks = "".join(
+        (f'\n[hooks.state."{state.key}"]\nenabled = true\ntrusted_hash = "{state.trusted_hash}"\n')
+        for state in trusted_states(source)
     )
+    return raw + hooks.encode()
 
 
 def test_newer_requested_generation_wins_without_scanning_ambient_higher_caches(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    synthetic_install_receipt: None,
 ) -> None:
+    _ = synthetic_install_receipt
     # Given
     home = tmp_path / "home"
     home.mkdir()
-    cache_base = home / "plugins" / "cache" / "codex-must-work-local" / "codex-must-work"
+    cache_base = home / "plugins" / "cache" / "simdorei" / "codex-must-work"
     configured = source_fixture(cache_base, _OLDER, _OLDER)
     requested = source_fixture(tmp_path, _CURRENT, "requested")
     original = _enabled_prior_config(configured)
@@ -113,7 +117,7 @@ def test_newer_requested_generation_wins_without_scanning_ambient_higher_caches(
 
     # Then
     with installer_lock(home.resolve()) as lease:
-        final = installer_observation.observe_config(home.resolve(), lease)
+        final = installer_observation_config.observe_config(home.resolve(), lease)
     assert result.install_ok
     assert final.source_root == (cache_base / _CURRENT).resolve()
     assert final.source_root not in {incomplete.resolve(), corrupt.resolve()}
@@ -124,11 +128,13 @@ def test_newer_requested_generation_wins_without_scanning_ambient_higher_caches(
 def test_older_requested_generation_never_downgrades_the_configured_generation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    synthetic_install_receipt: None,
 ) -> None:
+    _ = synthetic_install_receipt
     # Given
     home = tmp_path / "home"
     home.mkdir()
-    cache_base = home / "plugins" / "cache" / "codex-must-work-local" / "codex-must-work"
+    cache_base = home / "plugins" / "cache" / "simdorei" / "codex-must-work"
     configured = source_fixture(cache_base, _CURRENT, _CURRENT)
     requested = source_fixture(tmp_path, _OLDER, "requested")
     original = _enabled_prior_config(configured)
@@ -146,11 +152,13 @@ def test_older_requested_generation_never_downgrades_the_configured_generation(
 def test_publication_crash_restores_qualified_prior_config_bytes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    synthetic_install_receipt: None,
 ) -> None:
+    _ = synthetic_install_receipt
     # Given
     home = tmp_path / "home"
     home.mkdir()
-    cache_base = home / "plugins" / "cache" / "codex-must-work-local" / "codex-must-work"
+    cache_base = home / "plugins" / "cache" / "simdorei" / "codex-must-work"
     configured = source_fixture(cache_base, _OLDER, _OLDER)
     requested = source_fixture(tmp_path, _CURRENT, "requested")
     original = _enabled_prior_config(configured)
@@ -176,7 +184,7 @@ def test_publication_crash_restores_qualified_prior_config_bytes(
     def remove(path: Path, expected: CacheIdentity) -> None:
         metadata = path.stat()
         assert expected == CacheIdentity(metadata.st_dev, metadata.st_ino)
-        path.rmdir()
+        shutil.rmtree(path)
 
     monkeypatch.setattr(cache_publication, "remove_tree", remove)
     with installer_lock(home.resolve()) as lease:

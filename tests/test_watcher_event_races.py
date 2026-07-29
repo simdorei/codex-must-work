@@ -1,9 +1,9 @@
 from datetime import UTC, datetime
 
 from scripts.event_source import EventKind, ObservedEvent
-from scripts.silence import initial_state
+from scripts.monitor_target import MonitorTarget
+from scripts.stall_detector import initial_state
 from scripts.watcher_events import TargetEventContext, apply_target_events
-from scripts.watcher_models import MonitorTarget
 
 
 def test_late_terminal_from_prior_parent_turn_does_not_finish_replacement() -> None:

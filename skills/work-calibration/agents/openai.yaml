@@ -1,6 +1,6 @@
 interface:
-  display_name: "Heartbeat recommendation"
-  short_description: "Apply or reject one versioned local-history recommendation"
-  default_prompt: "Handle the Codex Must Work calibration context before continuing."
+  display_name: "Bottleneck threshold guidance"
+  short_description: "Route older calibration questions to current work settings"
+  default_prompt: "Use $work-settings to show or change Codex Must Work thresholds."
 policy:
   allow_implicit_invocation: true

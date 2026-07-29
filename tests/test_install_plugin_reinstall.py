@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, final
 
 import pytest
 
-from scripts import install_plugin, installer_observation
+from scripts import install_plugin, installer_prior_observation
 from scripts.cache_types import CacheIdentity, CachePublication
 from scripts.control_capability import load_control_key
 from scripts.install_errors import InstallPluginError
@@ -42,8 +43,11 @@ def _trusted_for(path: Path, _marketplace: str) -> tuple[TrustedHookState, ...]:
 
 
 def test_same_version_reinstall_preserves_control_key(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_install_receipt: None,
 ) -> None:
+    _ = synthetic_install_receipt
     # Given
     home = tmp_path / "home"
     home.mkdir()
@@ -68,7 +72,7 @@ def test_same_version_reinstall_preserves_control_key(
 
     monkeypatch.setattr(install_plugin, "publish_cache", publish)
     assert install(home.resolve(), source).install_ok
-    plugin_data = home / "plugins" / "data" / "codex-must-work-codex-must-work-local"
+    plugin_data = home / "plugins" / "data" / "codex-must-work-simdorei"
     first = load_control_key(plugin_data)
     first_identity = (plugin_data / "control.key").stat()
 
@@ -86,8 +90,12 @@ def test_same_version_reinstall_preserves_control_key(
 
 @pytest.mark.parametrize("mode", ["publish-error", "identity", "digest", "deleted"])
 def test_no_write_reinstall_race_never_leaves_an_enabled_cache_mismatch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    synthetic_install_receipt: None,
 ) -> None:
+    _ = synthetic_install_receipt
     home = tmp_path / "home"
     home.mkdir()
     source = source_fixture(tmp_path)
@@ -117,19 +125,19 @@ def test_no_write_reinstall_race_never_leaves_an_enabled_cache_mismatch(
     monkeypatch.setattr(install_plugin, "validate_codex_compatibility", check)
     monkeypatch.setattr(install_plugin, "publish_cache", publish)
     monkeypatch.setattr(install_plugin, "trusted_states", trusted_states)
-    monkeypatch.setattr(installer_observation, "snapshot_retained_cache", snapshot)
+    monkeypatch.setattr(installer_prior_observation, "snapshot_retained_cache", snapshot)
     monkeypatch.setattr(
-        installer_observation,
+        installer_prior_observation,
         "retained_cache_matches",
         retained.matches,
     )
     monkeypatch.setattr(
-        installer_observation,
+        installer_prior_observation,
         "trusted_hook_states_for_plugin",
         _trusted_for,
     )
     assert install(home.resolve(), source).install_ok
-    target = home / "plugins" / "cache" / "codex-must-work-local" / "codex-must-work" / "1.2.3"
+    target = home / "plugins" / "cache" / "simdorei" / "codex-must-work" / "1.2.3"
     if mode == "deleted":
         original_eligible = eligible_no_write
 
@@ -139,7 +147,7 @@ def test_no_write_reinstall_race_never_leaves_an_enabled_cache_mismatch(
             trust: tuple[TrustedHookState, ...],
         ) -> bool:
             eligible = original_eligible(prior, expected, trust)
-            expected.rmdir()
+            shutil.rmtree(expected)
             return eligible
 
         monkeypatch.setattr(install_plugin, "eligible_no_write", delete_after_classification)
@@ -178,7 +186,7 @@ def test_malformed_legacy_enabled_value_never_qualifies_for_no_write_success(
     config = home / "config.toml"
     _ = config.write_bytes(
         unsafe_prior_config(source, "zero")
-        + b'\n[plugins."codex-must-work@simdorei"]\nenabled = "yes"\n'
+        + b'\n[plugins."codex-must-work@codex-must-work-local"]\nenabled = "yes"\n'
     )
     compatibility = compatibility_fixture(home)
 

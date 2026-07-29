@@ -60,7 +60,6 @@ class SessionLocator:
     transcript_path: str
     plugin_root: str
     plugin_data: str
-    control_capability: str
     permission_mode: str | None
     calibration: CalibrationSnapshot
     package_digest_sha256: str
@@ -105,7 +104,6 @@ def serialize_locator(locator: SessionLocator) -> str:
             "transcript_path": locator.transcript_path,
             "plugin_root": locator.plugin_root,
             "plugin_data": locator.plugin_data,
-            "control_capability": locator.control_capability,
             "permission_mode": locator.permission_mode,
             "package_digest_sha256": locator.package_digest_sha256,
         },

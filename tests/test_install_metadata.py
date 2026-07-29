@@ -2,13 +2,19 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from pathlib import Path
 from typing import Protocol, TypedDict
 
 import pytest
 
 from scripts.cache_semver import higher
+from scripts.installer_cache_observation import selected_cache_root
+from scripts.marketplace_identity import (
+    DATA_ROOT_NAME,
+    MARKETPLACE_NAME,
+    PLUGIN_ID,
+    PLUGIN_NAME,
+)
 
 type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
 type JsonObject = dict[str, JsonValue]
@@ -24,7 +30,7 @@ def _load_json(loader: _JsonLoader, data: str) -> JsonValue:
 
 ROOT = Path(__file__).resolve().parents[1]
 OLD_VERSION = "0.1.0+codex.20260720221156"
-EVENTS = {"SessionStart"}
+EVENTS = {"UserPromptSubmit"}
 RELEASES = [
     (
         "0.144.0-alpha.4",
@@ -146,7 +152,9 @@ def test_metadata_marketplace_is_the_exact_public_contract() -> None:
     }
 
 
-def test_version_and_default_hook_path_define_one_cache_identity() -> None:
+def test_version_and_default_hook_path_define_one_cache_identity(
+    tmp_path: Path,
+) -> None:
     manifest = _json(".codex-plugin/plugin.json")
     version = manifest["version"]
     assert isinstance(version, str)
@@ -154,11 +162,20 @@ def test_version_and_default_hook_path_define_one_cache_identity() -> None:
     assert higher(version, OLD_VERSION)
     assert "hooks" not in manifest
     assert (ROOT / "hooks" / "hooks.json").is_file()
-    expected_cache = f"<CODEX_HOME>/plugins/cache/codex-must-work-local/codex-must-work/{version}"
-    assert expected_cache in (ROOT / "README.md").read_text(encoding="utf-8")
+    cache = tmp_path / "plugins" / "cache" / MARKETPLACE_NAME / PLUGIN_NAME / version
+    metadata = cache / ".codex-plugin"
+    metadata.mkdir(parents=True)
+    _ = (metadata / "plugin.json").write_text(
+        json.dumps({"name": PLUGIN_NAME, "version": version}),
+        encoding="utf-8",
+    )
+
+    assert selected_cache_root(tmp_path) == cache
+    assert f"{PLUGIN_NAME}@{MARKETPLACE_NAME}" == PLUGIN_ID
+    assert f"{PLUGIN_NAME}-{MARKETPLACE_NAME}" == DATA_ROOT_NAME
 
 
-def test_metadata_hook_manifest_has_only_session_start_and_exact_path() -> None:
+def test_metadata_hook_manifest_has_only_explicit_prompt_and_exact_path() -> None:
     manifest = _json("hooks/hooks.json")
     hooks = manifest.get("hooks")
     assert isinstance(hooks, dict)
@@ -206,57 +223,3 @@ def test_metadata_contract_rejects_invalid_fixture() -> None:
     fixture["releases"] = []
     with pytest.raises(AssertionError):
         _ = _release_identities(fixture)
-
-
-def test_readme_uses_only_root_trust_aware_installers() -> None:
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert ".\\install.ps1" in readme
-    assert "./install.sh" in readme
-    assert "codex plugin marketplace add" not in readme
-    assert "codex plugin add" not in readme
-    assert "/hooks" in readme
-    assert "필요하지 않습니다" in readme
-    assert "재시작" in readme
-    assert "새 스레드" in readme
-
-
-def test_readme_documents_versions_diagnostics_and_owned_paths() -> None:
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    for version, *_ in RELEASES:
-        assert version in readme
-    for diagnostic in (
-        "unsupported_codex_hook_contract: CMW must be updated for this Codex version",
-        "unsupported_codex_marketplace_root",
-        "codex_hooks_disabled",
-        "codex_plugins_disabled",
-        "managed_hooks_only",
-        "managed_hook_policy_unverifiable",
-        "cache_selection_conflict",
-        "cache_same_version_mismatch",
-        "codex_config_metadata_unsupported",
-    ):
-        assert diagnostic in readme
-    for path in (
-        "codex-must-work@codex-must-work-local",
-        "<CODEX_HOME>/plugins/data/codex-must-work-codex-must-work-local",
-        "[marketplaces.codex-must-work-local]",
-        "<CODEX_HOME>/config.toml",
-    ):
-        assert path in readme
-
-
-def test_readme_documents_update_migration_and_metadata_limits() -> None:
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    required = (
-        "소스 체크아웃을 이동하거나 삭제하지 마세요",
-        "업데이트한 뒤 같은 설치 명령을 다시 실행",
-        "codex-must-work@simdorei",
-        "기존 캐시, 훅 상태, 작업 데이터와 보정 기록은 삭제하지 않습니다",
-        "첫 스레드",
-        "사용자가 동의하기 전에는 적용하지 않습니다",
-        "관리자 권한을 요청하지 않습니다",
-        "audit SACL",
-        "기존 `[notice]` 표는 바이트 단위로 변경하지 않습니다",
-    )
-    assert all(text in readme for text in required)
-    assert re.search(r"예약 버전 `local`.*더 높은 버전", readme, re.DOTALL)

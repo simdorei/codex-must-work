@@ -27,7 +27,10 @@ fn run(arguments: &[OsString]) -> Result<i32, String> {
     let data_root = plugin_data_root(&plugin_root)?;
     let python = ensure_python(&plugin_root, &data_root)?;
     let status = Command::new(&python)
+        .arg("-I")
         .arg("-B")
+        .arg("-X")
+        .arg("utf8")
         .args(arguments)
         .env("PLUGIN_DATA", &data_root)
         .stdin(Stdio::inherit())

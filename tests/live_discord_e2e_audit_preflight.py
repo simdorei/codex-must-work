@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -22,7 +22,7 @@ class PreflightError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class PreflightLocator:
-    """Sensitive locator values retained only in memory."""
+    """Non-secret locator values retained only in memory."""
 
     session_id: str
     transcript_path: Path
@@ -30,7 +30,6 @@ class PreflightLocator:
     plugin_data: Path
     permission_mode: str
     package_digest_sha256: str
-    control_capability: str = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -234,7 +233,6 @@ def _parse_locator(
     transcript = values.get("transcript_path")
     plugin_root = values.get("plugin_root")
     plugin_data = values.get("plugin_data")
-    capability = values.get("control_capability")
     permission = values.get("permission_mode")
     package_digest_sha256 = values.get("package_digest_sha256")
     if (
@@ -246,8 +244,6 @@ def _parse_locator(
         or not plugin_root
         or not isinstance(plugin_data, str)
         or not plugin_data
-        or not isinstance(capability, str)
-        or len(capability) != 43
         or not isinstance(permission, str)
         or not isinstance(package_digest_sha256, str)
         or not _is_sha256(package_digest_sha256)
@@ -265,7 +261,6 @@ def _parse_locator(
         Path(plugin_data).resolve(),
         permission,
         package_digest_sha256,
-        capability,
     )
 
 

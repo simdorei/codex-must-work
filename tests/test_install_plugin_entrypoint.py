@@ -55,7 +55,7 @@ def test_data_root_is_created_only_after_compatibility_and_removed_on_failure(
     compatibility = compatibility_fixture(tmp_path)
     home = tmp_path / f"home-{failure}"
     home.mkdir()
-    data_root = home / "plugins" / "data" / "codex-must-work-codex-must-work-local"
+    data_root = home / "plugins" / "data" / "codex-must-work-simdorei"
     checked = False
 
     def check(*_args: InstallerCallValue, **_kwargs: InstallerCallValue) -> CompatibilityResult:
@@ -81,8 +81,11 @@ def test_data_root_is_created_only_after_compatibility_and_removed_on_failure(
 
 
 def test_success_creates_exact_private_data_root(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    synthetic_install_receipt: None,
 ) -> None:
+    _ = synthetic_install_receipt
     home, source, compatibility = failure_case(tmp_path, monkeypatch)
 
     def check(*_args: InstallerCallValue, **_kwargs: InstallerCallValue) -> CompatibilityResult:
@@ -92,7 +95,7 @@ def test_success_creates_exact_private_data_root(
     monkeypatch.setattr(install_plugin, "publish_cache", publisher(home))
     result = install(home.resolve(), source)
 
-    data_root = home / "plugins" / "data" / "codex-must-work-codex-must-work-local"
+    data_root = home / "plugins" / "data" / "codex-must-work-simdorei"
     assert result.install_ok
     assert data_root.is_dir()
     assert (data_root / ".private-root-v1").is_file()

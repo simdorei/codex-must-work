@@ -6,7 +6,7 @@ import hashlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from scripts.diagnostics import (
+from scripts.monitor_diagnostics import (
     DiagnosticCode,
     DiagnosticEvent,
     MonitorState,
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from datetime import datetime
     from pathlib import Path
 
-    from scripts.watcher_models import MonitorTarget, RuntimeTarget
+    from scripts.monitor_target import MonitorTarget, RuntimeTarget
 
 
 @dataclass(frozen=True, slots=True)

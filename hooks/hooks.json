@@ -1,12 +1,12 @@
 {
   "hooks": {
-    "SessionStart": [
+    "UserPromptSubmit": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${PLUGIN_ROOT}/runtime/launch-python.sh\" \"${PLUGIN_ROOT}/scripts/hook_event.py\"",
-            "commandWindows": "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}/runtime/launch-python.ps1\" -ForwardStdin \"${PLUGIN_ROOT}/scripts/hook_event.py\"",
+            "command": "sh \"${PLUGIN_ROOT}/runtime/launch-python.sh\" \"${PLUGIN_ROOT}/scripts/work_on_hook.py\"",
+            "commandWindows": "powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"${PLUGIN_ROOT}/runtime/launch-python.ps1\" -ForwardStdin \"${PLUGIN_ROOT}/scripts/work_on_hook.py\"",
             "timeout": 60
           }
         ]

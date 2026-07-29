@@ -13,6 +13,7 @@ from scripts.manager_runtime import (
     restart_request_from_values,
 )
 from scripts.manager_runtime_values import bump_revision
+from scripts.monitor_state import runtime_target_from_values as passive_runtime_target_from_values
 from scripts.state import mutate_existing_state
 from scripts.watcher_batch import read_target_batch
 from scripts.watcher_events import event_is_turn_activity
@@ -133,14 +134,15 @@ def _request_is_fresh(
     target = _validated_target(root, runtime, values, request)
     if target is None:
         return False
-    batch = read_target_batch(root, target)
+    passive_target = passive_runtime_target_from_values(root, runtime.runtime_file, values)
+    batch = read_target_batch(root, passive_target)
     if batch.previous_cursor is None:
         _clear_request(values, runtime.runtime_file)
         return False
     if _requested_monitor(target, request) is None:
         _clear_request(values, runtime.runtime_file)
         return False
-    if any(event_is_turn_activity(event, target) for event in batch.events):
+    if any(event_is_turn_activity(event, passive_target) for event in batch.events):
         _clear_request(values, runtime.runtime_file)
         return False
     return True

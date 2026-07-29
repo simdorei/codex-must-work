@@ -27,6 +27,10 @@ def run_cli(installer: _Installer, argv: list[str] | None = None) -> int:
     result = installer(Path(values[0]), Path(values[1]))
     if result.install_ok:
         _ = sys.stdout.write("install=ok\n")
+        if result.warning_code is not None:
+            _ = sys.stderr.write(
+                json.dumps({"warning_code": result.warning_code}, sort_keys=True) + "\n"
+            )
         return 0
     _ = sys.stderr.write(json.dumps(asdict(result), sort_keys=True) + "\n")
     return 1

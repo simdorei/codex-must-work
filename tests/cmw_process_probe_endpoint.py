@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
     from scripts.mcp_protocol import JsonObject
 
-type ControlTool = Literal["cmw.start", "cmw.stop", "cmw.status", "cmw.complete"]
+type ControlTool = Literal["cmw.work_on", "cmw.stop", "cmw.status", "cmw.complete"]
 _SCHEMA_VERSION: Final = 1
 _TIMEOUT_SECONDS: Final = 3.0
 _LOCATOR_UNAVAILABLE: Final = "control_endpoint_locator_unavailable"

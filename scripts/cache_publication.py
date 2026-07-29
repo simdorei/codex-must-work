@@ -13,10 +13,16 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from scripts.cache_package import expected_directories
-from scripts.cache_security import create_secure_directory, require_directory, secure_identity
+from scripts.cache_security import (
+    claim_secure_directory,
+    create_secure_directory,
+    require_directory,
+    secure_identity,
+)
 from scripts.cache_semver import higher
 from scripts.cache_types import CacheIdentity, identity
 from scripts.install_errors import InstallPluginError
+from scripts.marketplace_identity import MARKETPLACE_NAME, PLUGIN_NAME
 from scripts.private_root import PrivateRootError, ensure_private_root
 from scripts.runtime_cleanup import delete_runtime_tree
 from scripts.state_io import UnsafeStatePathError, open_direct_file
@@ -28,14 +34,13 @@ def cache_roots(home: Path) -> tuple[Path, Path]:
     plugins = _ordinary_directory(home / "plugins")
     cache = _ordinary_directory(plugins / "cache")
     staging = plugins / ".cmw-install-staging"
-    marketplace = cache / "codex-must-work-local"
+    marketplace = _ordinary_directory(cache / MARKETPLACE_NAME)
     try:
         ensure_private_root(staging)
-        ensure_private_root(marketplace)
     except PrivateRootError:
         _fail("cache_path_invalid")
-    return create_secure_directory(staging / "codex-must-work"), create_secure_directory(
-        marketplace / "codex-must-work"
+    return create_secure_directory(staging / PLUGIN_NAME), claim_secure_directory(
+        marketplace / PLUGIN_NAME
     )
 
 
